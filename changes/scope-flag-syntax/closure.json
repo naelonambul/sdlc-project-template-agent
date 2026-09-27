@@ -1,0 +1,8 @@
+{
+  "schema": 1,
+  "baseline": {},
+  "packet_sha256": "sha256:1b49f1832eecb38898e65c7845d885ac27df4da53050f04014d8c09aa49ae8b0",
+  "evidence": [
+    "local: python3 scripts/repo.py verify --change scope-flag-syntax --full -> control-plane passed (.evidence/20260927T131437868873Z/evidence.json)"
+  ]
+}

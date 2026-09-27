@@ -10,7 +10,7 @@ The lifecycle rules are executable. `python3 scripts/repo.py status --change <id
 ## Start a change
 
 1. Pick an id (lowercase, digits, inner hyphens) and a kind from `changes/README.md`. A new product's first change is `product-init`. An existing repository adopting the template follows the template release's `docs/adoption.md` instead.
-2. From the commit the change starts from, run `python3 scripts/repo.py new <id> --kind <kind> --title "<summary>" --scope <pattern>...` (`--with-spec` adds an optional change-local `spec.md`). It writes `change.json` with `base` and `baseline` filled in, the plan skeleton, and copies of the root `intent.md`/`spec.md` the kind requires. Edit those copies, never the root files.
+2. From the commit the change starts from, run `python3 scripts/repo.py new <id> --kind <kind> --title "<summary>" [--scope <pattern>]...` (`--with-spec` adds an optional change-local `spec.md`). It writes `change.json` with `base` and `baseline` filled in, the plan skeleton, and copies of the root `intent.md`/`spec.md` the kind requires. Edit those copies, never the root files.
 3. Keep `write_scope` to the paths the change needs, as narrow as practical. Without `repo.py new`, copy `changes/_template/` and the root files by hand and fill `base.commit` and the `baseline` digests printed by `status`.
 4. Work on a branch named `change/<id>`, and use `Change-ID: <id>` in the pull request.
 
