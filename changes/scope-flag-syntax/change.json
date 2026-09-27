@@ -1,0 +1,23 @@
+{
+  "schema": 1,
+  "id": "scope-flag-syntax",
+  "kind": "repository",
+  "title": "Show --scope as repeatable in the sdlc-artifacts skill",
+  "base": {
+    "ref": "main",
+    "commit": "ae86a20d936a2b396e323bdb545f3b343a86a41a"
+  },
+  "baseline": {},
+  "write_scope": [
+    ".agents/skills/sdlc-artifacts/SKILL.md"
+  ],
+  "approvals": [
+    {
+      "artifact": "plan.md",
+      "sha256": "sha256:400e58b7bba9a56054b2c7f033d4fd1925bfe8b80e0007911912eb76d767a556",
+      "by": "naelonambul (owner)",
+      "at": "2026-09-27T13:14:37Z",
+      "note": "Owner approval given in chat for this exact digest; recorded by the agent. Local claim: unverified."
+    }
+  ]
+}
