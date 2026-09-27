@@ -1,0 +1,8 @@
+{
+  "schema": 1,
+  "baseline": {},
+  "packet_sha256": "sha256:0020edc20767cb8f05cb52fc2390082b3dcc1a897230ada5927b2e9381810a43",
+  "evidence": [
+    "local: python3 scripts/repo.py verify --change review-approved-wording --full -> control-plane passed (.evidence/20260927T123137447982Z/evidence.json)"
+  ]
+}

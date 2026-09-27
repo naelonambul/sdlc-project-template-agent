@@ -19,7 +19,7 @@ Review the implementation against the human owner's explicit decisions, `AGENTS.
 
 ## Finding levels
 
-- **Important**: could break required behavior, cause a regression, violate accepted artifacts or repository policy, create a security/privacy problem, or invalidate verification.
+- **Important**: could break required behavior, cause a regression, violate approved artifacts or repository policy, create a security/privacy problem, or invalidate verification.
 - **Nit**: non-blocking style or local cleanup. Report at most five nits; summarize additional minor issues instead of flooding the review.
 
 Do not spend review budget repeating formatting, lint, or other findings that deterministic repository checks already enforce unless the deterministic check itself is missing or broken.
@@ -29,7 +29,7 @@ Do not spend review budget repeating formatting, lint, or other findings that de
 For each substantive finding:
 
 - identify the affected file or behavior;
-- explain why it conflicts with the accepted artifacts or repository behavior;
+- explain why it conflicts with the approved artifacts or repository behavior;
 - state the likely impact;
 - propose the smallest reasonable correction when clear.
 

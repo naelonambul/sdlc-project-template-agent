@@ -1,0 +1,23 @@
+{
+  "schema": 1,
+  "id": "review-approved-wording",
+  "kind": "repository",
+  "title": "Use approved, not accepted, for artifacts in REVIEW.md",
+  "base": {
+    "ref": "main",
+    "commit": "2adf02390892577089f2ad481afa17f56b97426d"
+  },
+  "baseline": {},
+  "write_scope": [
+    "REVIEW.md"
+  ],
+  "approvals": [
+    {
+      "artifact": "plan.md",
+      "sha256": "sha256:57274383e6fc40d88599f9f831f0d419e91f9734bbd484cac862b36de9547fdd",
+      "by": "naelonambul (owner)",
+      "at": "2026-09-27T12:31:33Z",
+      "note": "Owner approval given in chat for this exact digest; recorded by the agent. Local claim: unverified."
+    }
+  ]
+}
