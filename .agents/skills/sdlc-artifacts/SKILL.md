@@ -44,7 +44,7 @@ Follow the Lifecycle and Closure sections of `changes/README.md`:
 1. Verify locally (`repo.py verify --change <id>`, and `--full`). When the change touches `AGENTS.md`, a skill or the guard, also run the probes in `docs/agent-surfaces.md` once and record the result there.
 2. Merge accepted change-local `intent.md`/`spec.md` into the root (`cp changes/<id>/spec.md spec.md`) and verify again.
 3. Run `python3 scripts/repo.py close <id> --evidence <ref>...`, citing only that existing local evidence. `status` then reports `stage=closed closure=candidate`.
-4. Commit (`git add` the new `closure.json`; `commit -a` does not pick up new files), push, and open the pull request. CI `summary` must pass on the closure-containing head. Record CI results in the pull request, never in the closure.
+4. Commit (`git add` the new `closure.json`; `commit -a` does not pick up new files), push, and open the pull request. Make this push yourself: the owner can approve only a pull request the agent identity authored and pushed last (`docs/host-setup.md`). CI `summary` must pass on the closure-containing head. Record CI results in the pull request, never in the closure.
 5. After human review and a squash merge, confirm `status` on the baseline branch reports `freshness=frozen closure=frozen`.
 
 Fixes after the closure exists rerun `close` with fresh evidence in the same commit; see `changes/README.md`, Lifecycle. After merge the packet is frozen: never edit it again. Record follow-up work as a new change.
