@@ -37,4 +37,4 @@ Do not invent findings to fill a quota. A clean review may report no substantive
 
 ## Separation of duties
 
-The agent that authored a change may self-check it, but it must not treat its own review as human approval. A digest-bound approval claim in `change.json` is `unverified` process metadata, not proof of who approved. A pull-request author cannot approve their own pull request, so an agent sharing the owner's GitHub identity cannot produce independent approval. Prefer a fresh-context review for the final independent pass when practical.
+The agent that authored a change may self-check it, and should, but its own review is never the human gate. The owner's gates are the digest-bound `repo.py approve` claims on the artifacts and the owner's review and merge of the pull request. A claim in `change.json` is `unverified` process metadata: it binds bytes, it does not prove who approved. Prefer a fresh-context or different-model review for the final independent pass when practical.

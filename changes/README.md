@@ -28,7 +28,7 @@ Create a packet with `python3 scripts/repo.py new <id> --kind <kind> --title <su
 | `architecture` | plan | spec | yes |
 | `repository` | plan | none | no: process and tooling only; may not modify an established root intent or spec |
 
-Root `intent.md` and `spec.md` start with the `<!-- sdlc:baseline-unestablished -->` marker. The first product change is a `product-init` change, and it removes the marker when its accepted copies are merged. Until then, kinds that inherit the baseline are blocked. An existing product whose root `intent.md` and `spec.md` have no marker is already established: it adopts the template through the template release's `docs/adoption.md`, not through `product-init`.
+Root `intent.md` and `spec.md` start with the `<!-- sdlc:baseline-unestablished -->` marker. The first product change is a `product-init` change, and it removes the marker when its accepted copies are merged. Until then, kinds that inherit the baseline are blocked. A root `intent.md` and `spec.md` without the marker are already established, and `product-init` is not run again.
 
 ## Computed state
 
@@ -72,13 +72,13 @@ The ordered path for every change, with what `python3 scripts/repo.py status --c
 | Step | Action | Expected status |
 |---|---|---|
 | 1 | Create the packet; draft artifacts in chain order | `stage=<first unapproved artifact>`, `readiness=blocked` |
-| 2 | The owner approves each artifact in order with `repo.py approve`; the agent commits and pushes the claim (see "Who pushes what" in `docs/host-setup.md`) | after the last: `stage=implementation readiness=ready` |
+| 2 | The owner approves each artifact in order with `repo.py approve`; the agent commits and pushes the claim | after the last: `stage=implementation readiness=ready` |
 | 3 | Implement inside `write_scope`; run `repo.py verify --change <id>`, and `--full` before closing | unchanged |
 | 4 | Merge accepted change-local `intent.md`/`spec.md` into the root; verify again | unchanged |
 | 5 | Add a candidate `closure.json` citing the step 4 evidence | `stage=closed freshness=current readiness=ready closure=candidate` |
 | 6 | The agent commits (`git add` the new `closure.json`), pushes, and opens one pull request with `Change-ID: <id>` | the CI `status` job validates the candidate |
 | 7 | CI `summary` must pass on the head that contains `closure.json`; record the result in the pull request | unchanged |
-| 8 | Human review and approval on the provider; squash merge. Under the recommended ruleset the approver must be neither the pull-request author nor the last pusher, so the agent makes the last push | — |
+| 8 | The owner reviews the pull request and squash-merges it | — |
 | 9 | The post-merge `push` run on the baseline branch passes; confirm the anchor | `stage=closed freshness=frozen closure=frozen`, anchored at the merge (squash) commit |
 
 Evidence rules:

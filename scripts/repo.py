@@ -741,7 +741,7 @@ def hook_findings(root: Path, tracked: set) -> list[Reason]:
 
 # Paths the template itself owns. Anything else tracked is product material.
 TEMPLATE_PATHS = (
-    "scripts/", "changes/", ".agents/", ".claude/", ".github/", "docs/", "evals/", ".evidence/",
+    "scripts/", "changes/", ".agents/", ".claude/", ".github/", "docs/", ".evidence/",
     "AGENTS.md", "README.md", "REVIEW.md", "LICENSE", "intent.md", "spec.md", "checks.json",
     ".gitignore", ".gitattributes",
 )

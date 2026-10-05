@@ -25,11 +25,10 @@ Use the `sdlc-artifacts` skill whenever creating, revising, approving, or closin
 ## Working rules
 
 - Use repository-local skills from `.agents/skills/` when their trigger applies.
-- Treat Context7, Serena, and Graphify as optional capabilities, not mandatory gates.
 - When the product stack becomes concrete, use the `repository-quality` skill to discover existing quality tooling or bootstrap a minimal stack-appropriate setup when it is missing.
 - Do not force-push, rewrite history, hard-reset shared work, or delete unrelated changes unless explicitly instructed.
 - Do not weaken tests, lint rules, type checks, security checks, or configuration merely to make validation pass.
-- Do not commit tool caches or generated analysis metadata. The default `.gitignore` excludes known Serena and Graphify outputs.
+- Do not commit tool caches or generated analysis metadata.
 - Prefer repository-native commands and conventions over agent preferences.
 - When delegating implementation, follow the `change-execution` skill. The delegating agent stays responsible for the change: workers act only from a closed brief within `write_scope`, never approve, commit, merge or edit the packet, and their reports are accepted only after the delegating agent re-runs verification itself.
 - Keep agent-specific adapters thin. Put shared policy in this file, skills, or deterministic scripts instead of duplicating it per agent. Do not add a `CLAUDE.md` that replaces this file; see `docs/agent-surfaces.md`.
@@ -41,7 +40,6 @@ Use the `sdlc-artifacts` skill whenever creating, revising, approving, or closin
 - `python3 scripts/repo.py verify --change <id>`: runs the checks registered in `checks.json` that the diff routes to (`--full` for all), and writes evidence to `.evidence/`.
 - `python3 scripts/repo.py approve <id> <artifact> --by <owner>`: records the owner's digest-bound claim for the current bytes, in chain order. The owner runs it, or asks for it explicitly; it is still an `unverified` local claim.
 - `python3 scripts/repo.py close <id> --evidence <ref>...`: writes the candidate `closure.json` from the current packet and root.
-- `python3 scripts/evals.py`: runs the agent regression evals in `evals/` against the installed harness CLIs. `skipped` is never a pass.
 
 `scripts/hooks/guard.py` is the agent-neutral in-session guard: it denies file-tool edits to the root baseline, frozen packets, approvals and closures, and asks before destructive git. `.claude/settings.json` only wires it, so it runs in Claude Code only. A denial names the command to use instead; do not work around it through the shell, which `repo.py status` catches anyway.
 

@@ -1,0 +1,42 @@
+{
+  "schema": 1,
+  "id": "solo-trim",
+  "kind": "repository",
+  "title": "Trim the template to a solo-owner, agent-operated repository",
+  "base": {
+    "ref": "main",
+    "commit": "7ccb17caf7d0d02560ecda41b6ef16b167dd9aab"
+  },
+  "baseline": {},
+  "write_scope": [
+    "docs/adoption.md",
+    "docs/host-setup.md",
+    "docs/agent-surfaces.md",
+    "REVIEW.md",
+    "changes/README.md",
+    "README.md",
+    "AGENTS.md",
+    "scripts/README.md",
+    "scripts/repo.py",
+    "scripts/evals.py",
+    "scripts/tests/test_evals.py",
+    "evals/",
+    ".agents/skills/context7/",
+    ".agents/skills/serena/",
+    ".agents/skills/graphify/",
+    ".claude/skills/context7",
+    ".claude/skills/serena",
+    ".claude/skills/graphify",
+    ".agents/skills/sdlc-artifacts/SKILL.md",
+    ".gitignore"
+  ],
+  "approvals": [
+    {
+      "artifact": "plan.md",
+      "sha256": "sha256:04c43ae78644befa14dd47e5b126802094df0d6fb0b86c0ce3c9f714e6b14a39",
+      "by": "naelonambul",
+      "at": "2026-10-05T17:35:31Z",
+      "note": "Owner approved the revised plan in chat (\"\uc2b9\uc778\") at digest 04c43ae7; trust stages: owner merges now, agent merges later"
+    }
+  ]
+}

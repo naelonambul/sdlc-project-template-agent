@@ -102,17 +102,6 @@ junit.xml
 test-results/
 
 # -----------------------------------------------------------------------------
-# Agent / analysis tool generated metadata
-# -----------------------------------------------------------------------------
-.serena/
-graphify-out/
-.graphify/
-
-# Temporary agent analysis/export directories should stay outside the repo.
-.agent-tmp/
-.agent-cache/
-
-# -----------------------------------------------------------------------------
 # repo.py verify evidence (raw logs + evidence.json per run)
 # -----------------------------------------------------------------------------
 .evidence/
