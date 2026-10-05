@@ -1,6 +1,6 @@
 ---
 name: verification-map
-description: Create, use, or maintain a project-local verification skill (`verify-<app>`) with a feature map, so any agent can prove user-visible behaviour on the real running product. Use when a project has a user-facing surface (CLI, web, desktop, API, mobile) but no scripted way for an agent to drive it, when choosing how to verify a behaviour change, or when an existing verify skill's feature map has drifted from the product.
+description: Create, use, or maintain a project-local verification skill (`verify-<app>`) with a feature map, so any agent can prove user-visible behaviour on the real running product. Use when a project has a user-facing surface (CLI, web, desktop, API, mobile) but no scripted way for an agent to drive it, when choosing how to verify a behaviour change or reproduce a reported bug, when promoting a successful drive into a registered check, or when an existing verify skill's feature map has drifted from the product.
 ---
 
 # Verification Map
@@ -13,7 +13,7 @@ This skill supports the governance model; it does not change it. Registered chec
 
 Add the verify skill through a normal change packet whose `write_scope` covers the new paths.
 
-1. **Interview the repository, not the owner.** Find out from code, scripts and docs, and ask only what cannot be observed:
+1. **Interview the repository, not the owner.** Find out from code, scripts and docs, and ask only what cannot be observed. `references/platforms.md` gives the defaults per surface when the repository is silent:
    - **Surface:** what a user actually touches. Pick the primary one and note the others.
    - **Run:** the repository's own command to start it, plus ports, environment, seed data and auth.
    - **Drive:** how an agent can interact with it programmatically. Prefer an existing harness (test drivers, scripts, endpoints) over a new one.
@@ -24,7 +24,7 @@ Add the verify skill through a normal change packet whose `write_scope` covers t
    - **Launch:** the exact start command, how to tell it is ready, and teardown. For a short-lived CLI, launch means build or install once, then run each drive in a fresh, isolated working directory.
    - **Doctor:** one read-only check that the instance is worth driving: running, the right build, owned by this run.
    - **Drive:** real commands or selectors from this repository, not examples. Prefer stable handles (command names, labels, routes, data attributes) over positions.
-   - **Evidence:** what to capture and where it is kept. Exercise the real user path, not internal setters or test-only shortcuts. Capture the action and the resulting state. Check side effects (files, stored data, messages), not only what is displayed. A mock counts only behind a boundary that already isolates a real external system.
+   - **Evidence:** what to capture and where it is kept. Structured state is the oracle (accessibility tree or DOM with refs, status codes, logs, stored state); screenshots and recordings are evidence for people; OCR only where no accessibility data exists. Exercise the real user path, not internal setters or test-only shortcuts. Capture the action and the resulting state. Check side effects (files, stored data, messages), not only what is displayed. A mock counts only behind a boundary that already isolates a real external system.
    - **Cleanup:** stop only what this run started. Cleanup never deletes the evidence.
    Any helper script the skill ships must be executable, with its invocation shown in the skill.
 3. **Add the adapter:** a relative symlink `.claude/skills/verify-<app>` → `../../.agents/skills/verify-<app>`. `repo.py status` checks it. Codex discovers `.agents/skills/` without one.
@@ -41,6 +41,10 @@ Add the verify skill through a normal change packet whose `write_scope` covers t
 - When a path cannot be reached, name it and its prerequisite (account, platform, external state), and cover the closest real path that remains.
 - For a broad regression, walk the README's sweep order.
 - When delegating with the `change-execution` skill, point the brief's READ and VERIFY fields at the relevant feature files, so a worker or reviewer needs no knowledge of the whole product.
+
+### Promote
+
+Interactive driving is for exploring and reproducing. Once a drive has proven something worth re-checking, freeze it: save the exact steps as a replayable script that asserts on the oracle, register it in `checks.json` (its own group and CI job when the toolchain needs one; a local, `requires`-guarded check when CI cannot host the platform), and point the feature file at it. `references/platforms.md`, "Explore, then freeze", has the steps. A reproduction from an `incident` change is promoted this way and becomes the fix's regression test.
 
 ## Maintain
 
