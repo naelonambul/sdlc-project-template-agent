@@ -20,7 +20,7 @@ The root `intent.md` and `spec.md` are the durable product baseline. A new produ
 
 1. Create a new repository from this GitHub template and clone it.
 2. Create the `product-init` packet: `python3 scripts/repo.py new <id> --kind product-init --title "<summary>"`. It copies the root `intent.md` and `spec.md` into the packet.
-3. Ask an agent to interrogate the idea until the intent is concrete, then approve `intent.md` yourself: `python3 scripts/repo.py approve <id> intent.md --by <you>` records a digest-bound claim for exactly the bytes you reviewed.
+3. Ask an agent to interrogate the idea until the intent is concrete, then approve `intent.md` yourself: `python3 scripts/repo.py approve <id> intent.md --by <you>` records a digest-bound claim for exactly the bytes you reviewed. Let the agent commit and push it, so you stay eligible to approve the pull request later (`docs/host-setup.md`, "Who pushes what").
 4. Draft and approve `spec.md`, then the change's `plan.md`, in that order.
 5. Implement only when `python3 scripts/repo.py status --change <id>` reports `readiness=ready`.
 6. Run repository-native validation, review against `REVIEW.md`, merge the accepted intent and spec into the root, run `python3 scripts/repo.py close <id> --evidence <ref>`, and open a pull request with `Change-ID: <id>`.
@@ -83,7 +83,7 @@ When a project chooses its application stack, establish the repository-native bu
 
 ## Template releases
 
-Template versions are Git tags plus release notes. A downstream project adopts a tag, not a moving `main`; `docs/adoption.md` covers adopting and upgrading. Settings such as branch protection are never inherited from a GitHub template and must be configured per repository.
+Template versions are Git tags plus release notes. A downstream project adopts a tag, not a moving `main`; `docs/adoption.md` covers adopting and upgrading. Settings such as branch protection and the optional `ANTHROPIC_API_KEY` secret for the agent evals are never inherited from a GitHub template and must be configured per repository (`docs/host-setup.md`).
 
 ## Source material
 

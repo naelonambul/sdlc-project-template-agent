@@ -66,4 +66,4 @@ Model output varies between runs. Before changing a case after a failure, rerun 
 
 ## CI
 
-`.github/workflows/agent-evals.yml` runs the `claude` cases on pull requests that touch agent configuration, weekly, and on demand, when the `ANTHROPIC_API_KEY` secret is present. It is advisory: it is not part of the `repository` gate, because evals spend tokens, need a credential, and depend on a model.
+`.github/workflows/agent-evals.yml` runs the `claude` cases on pull requests that touch agent configuration, weekly, and on demand, when the `ANTHROPIC_API_KEY` repository secret is present (`docs/host-setup.md`, "Optional: credentials for the agent evals"). Without it the job prints a notice and the cases are not run, so a green `evals` job is only meaningful when the secret exists. It is advisory: it is not part of the `repository` gate, because evals spend tokens, need a credential, and depend on a model.

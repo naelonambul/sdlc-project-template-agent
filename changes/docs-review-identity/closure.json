@@ -1,0 +1,9 @@
+{
+  "schema": 1,
+  "baseline": {},
+  "packet_sha256": "sha256:62efd16116a394e6f236720cd091b38d29bc678f9c7dec16fdecdd648b50c9df",
+  "evidence": [
+    ".evidence/20261005T170852804153Z/evidence.json sha256:8cc778ce323a4fa3227cd2212fbc3c67ca46c1237c36631836c7f0e6668aeb71",
+    "local: python3 scripts/repo.py verify --change docs-review-identity -> control-plane passed"
+  ]
+}
