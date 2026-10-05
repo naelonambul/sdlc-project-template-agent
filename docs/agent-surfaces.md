@@ -41,7 +41,7 @@ On checkouts where Git symlinks are disabled (for example Windows with `core.sym
 
 #### Hooks
 
-`.claude/settings.json` registers `scripts/hooks/guard.py claude` as a `PreToolUse` hook for `Edit|Write|MultiEdit` and `Bash`. The adapter holds no policy; `repo.py status` reports `hook-broken` when it points at an untracked script. The guard's exit code 2 blocks the tool call and feeds the reason back to the agent; an `ask` decision is returned as `permissionDecision: ask`, which prompts the human. Project settings apply only when the session's working directory is inside the project, and user or managed settings can change which hooks run, so a hook is never the enforcement boundary. The `guard-blocks-*` evals exercise this path on the real CLI (observed 2026-10-05, CLI 2.1.289).
+`.claude/settings.json` registers `scripts/hooks/guard.py claude` as a `PreToolUse` hook for `Edit|Write|MultiEdit` and `Bash`. The adapter holds no policy; `repo.py status` reports `hook-broken` when it points at an untracked script. The guard's exit code 2 blocks the tool call and feeds the reason back to the agent; an `ask` decision is returned as `permissionDecision: ask`, which prompts the human. Project settings apply only when the session's working directory is inside the project, and user or managed settings can change which hooks run, so a hook is never the enforcement boundary. To check the path on the real CLI, ask `claude -p` in a scratch copy to edit the root `intent.md` and to add an approval to a packet's `change.json`, and confirm both edits are denied with the guard's message (observed 2026-10-05, CLI 2.1.289).
 
 ### Codex
 
@@ -60,7 +60,7 @@ Codex also lists user-level and built-in skills alongside the repository's. Only
 | 2026-09-23 | Claude desktop app (Code tab) | session opened before adapters existed | not observed | not observed |
 | 2026-09-24 | Claude Code CLI 2.1.280 | no `CLAUDE.md`, adapters present | yes | 7/7 |
 | 2026-09-24 | Codex CLI 0.156.1 | `codex exec --sandbox read-only`, no adapters | yes | 7/7 (plus user-level and built-in skills) |
-| 2026-10-05 | Claude Code CLI 2.1.289 | no `CLAUDE.md`, adapters and `.claude/settings.json` hooks present; run as evals `agents-md-delivered`, `claude-md-shadows-agents-md`, `guard-blocks-*` | yes (no, with a shadowing `CLAUDE.md`) | 4/4 core skills checked; guard denied the root `intent.md` edit and the approval edit |
+| 2026-10-05 | Claude Code CLI 2.1.289 | no `CLAUDE.md`, adapters and `.claude/settings.json` hooks present; probes run non-interactively in a scratch copy | yes (no, with a shadowing `CLAUDE.md`) | 4/4 core skills checked; guard denied the root `intent.md` edit and the approval edit |
 
 The desktop app is **not verified**. Re-run the procedure below from a desktop session before claiming support. No other agent surface has been tested. Cursor is not a target.
 
@@ -75,9 +75,7 @@ claude -p "$Q" --disallowedTools "Read,Bash,Grep,Glob,Edit,Write,Agent"
 codex exec --sandbox read-only "$Q" < /dev/null
 ```
 
-For Claude Code, keep the `Skill` tool allowed; some hosts do not list skills when it is disallowed. Repeat the Claude command with a shadowing `CLAUDE.md` to confirm the negative case. For Codex, close stdin as shown, or `codex exec` waits for more input. Check that the repository's skills are not also installed at user level, so the result shows repository discovery. Then add a row to the results table.
-
-The same two probes are the evals `agents-md-delivered` and `claude-md-shadows-agents-md`; `python3 scripts/evals.py` runs them in a scratch copy and records the evidence, so a row here can cite an eval run.
+For Claude Code, keep the `Skill` tool allowed; some hosts do not list skills when it is disallowed. Repeat the Claude command with a shadowing `CLAUDE.md` to confirm the negative case. For Codex, close stdin as shown, or `codex exec` waits for more input. Check that the repository's skills are not also installed at user level, so the result shows repository discovery. Then add a row to the results table. Run the procedure again whenever a change touches `AGENTS.md`, a skill or the guard, and after a harness upgrade when an agent seems to have stopped following the repository rules.
 
 ## 3. Optional user-local model/tier mapping
 

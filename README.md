@@ -20,7 +20,7 @@ The root `intent.md` and `spec.md` are the durable product baseline. A new produ
 
 1. Create a new repository from this GitHub template and clone it.
 2. Create the `product-init` packet: `python3 scripts/repo.py new <id> --kind product-init --title "<summary>"`. It copies the root `intent.md` and `spec.md` into the packet.
-3. Ask an agent to interrogate the idea until the intent is concrete, then approve `intent.md` yourself: `python3 scripts/repo.py approve <id> intent.md --by <you>` records a digest-bound claim for exactly the bytes you reviewed. Let the agent commit and push it, so you stay eligible to approve the pull request later (`docs/host-setup.md`, "Who pushes what").
+3. Ask an agent to interrogate the idea until the intent is concrete, then approve `intent.md` yourself: `python3 scripts/repo.py approve <id> intent.md --by <you>` records a digest-bound claim for exactly the bytes you reviewed. The agent commits and pushes it.
 4. Draft and approve `spec.md`, then the change's `plan.md`, in that order.
 5. Implement only when `python3 scripts/repo.py status --change <id>` reports `readiness=ready`.
 6. Run repository-native validation, review against `REVIEW.md`, merge the accepted intent and spec into the root, run `python3 scripts/repo.py close <id> --evidence <ref>`, and open a pull request with `Change-ID: <id>`.
@@ -36,8 +36,7 @@ See `.agents/skills/sdlc-artifacts/SKILL.md` for the workflow.
 - `scripts/repo.py`: `status` computes change state and enforces gates; `verify` runs registered checks with routing and evidence; `new`, `approve` and `close` write packet records mechanically. Standard-library Python only.
 - `checks.json`: the check registry (exact argv, cwd, timeout, routed paths, required tools, group). `status` warns when product files are tracked but only the template's own check is registered.
 - `scripts/hooks/guard.py`: the agent-neutral in-session guard (deny file-tool edits to the root baseline, frozen packets, closures and approvals; ask before destructive git). `.claude/settings.json` is the thin Claude Code adapter; `status` checks that it points at tracked scripts.
-- `.agents/skills/`: on-demand shared agent procedures and tool policies. `.claude/skills/` holds thin symlink adapters.
-- `evals/` and `scripts/evals.py`: agent regression evaluations run against the installed harness CLIs (agent-surface delivery, the guard, the worker brief). Added from observed failures; run locally on demand, never by CI or the merge gate.
+- `.agents/skills/`: on-demand shared agent procedures. `.claude/skills/` holds thin symlink adapters.
 - `docs/`: supporting, reference, and historical documentation only.
 - `.github/`: the `Change-ID` pull-request template and the `repository` CI workflow. See `docs/host-setup.md` for one-time GitHub settings.
 
@@ -51,7 +50,7 @@ The repository enforces its rules in three layers, from hard to soft. Soft layer
 
 1. **Hard, after the fact:** `repo.py status` and `verify`, the control-plane tests, and the required `summary` check in CI. These decide. They do not depend on any agent having read anything.
 2. **In session:** `scripts/hooks/guard.py`, called from the agent's pre-edit and pre-command hooks. It denies the file-tool edits that no change should make by hand (root baseline, frozen packets, closures, approvals) and asks the human before destructive git or a shell write to `change.json`/`closure.json`. Shell writes to other protected files are not intercepted; layer 1 catches them. It is friction and an audit trail, not authentication.
-3. **Advisory:** `AGENTS.md`, the skills, `REVIEW.md`, and the evals that regression-test them against a real harness.
+3. **Advisory:** `AGENTS.md`, the skills and `REVIEW.md`. `docs/agent-surfaces.md` records how to check that a harness still delivers them.
 
 ## Scope
 
@@ -61,17 +60,12 @@ The template covers Plan, Design, Build, Test and Deploy as a loop of committed 
 
 SDLC semantics belong to the repository, not to a specific agent interface. Features such as interrogation commands, plan modes, subagents, or agent-specific hooks are optional convenience layers.
 
-CLI and program installation are machine responsibilities. The repository stores how agents are expected to use those tools through version-controlled skills and policies.
-
-Included shared skills:
+CLI and program installation are machine responsibilities. The repository stores the shared procedures as version-controlled skills:
 
 - `sdlc-artifacts`
 - `change-execution`
 - `verification-map`
 - `repository-quality`
-- `context7`
-- `serena`
-- `graphify`
 
 Optional tool unavailability must not silently change the SDLC gates.
 
@@ -79,11 +73,7 @@ Claude Code discovers these skills through thin `.claude/skills/<name>` symlinks
 
 ## Project initialization
 
-When a project chooses its application stack, establish the repository-native build, test, lint, format-check, and type-check commands. Register each as a check in `checks.json`, and give checks that need a new toolchain their own group and CI job. Then do the one-time GitHub setup in `docs/host-setup.md`. An existing repository adopts the template through `docs/adoption.md` instead of starting with `product-init`.
-
-## Template releases
-
-Template versions are Git tags plus release notes. A downstream project adopts a tag, not a moving `main`; `docs/adoption.md` covers adopting and upgrading. Settings such as branch protection are never inherited from a GitHub template and must be configured per repository (`docs/host-setup.md`).
+When a project chooses its application stack, establish the repository-native build, test, lint, format-check, and type-check commands. Register each as a check in `checks.json`, and give checks that need a new toolchain their own group and CI job. Then do the one-time GitHub setup in `docs/host-setup.md`; settings such as branch protection are never inherited from a GitHub template.
 
 ## Source material
 

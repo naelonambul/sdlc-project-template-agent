@@ -30,5 +30,13 @@
     ".agents/skills/sdlc-artifacts/SKILL.md",
     ".gitignore"
   ],
-  "approvals": []
+  "approvals": [
+    {
+      "artifact": "plan.md",
+      "sha256": "sha256:0eea7130f9b931d2ebffd327f6429967f702fdeb875c34d3b97bbf6d49691918",
+      "by": "naelonambul",
+      "at": "2026-10-05T17:27:58Z",
+      "note": "Owner approved in chat (\"\uc2b9\uc778\ud558\uc790\") after reviewing the plan digest 0eea7130"
+    }
+  ]
 }
