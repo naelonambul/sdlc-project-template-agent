@@ -1,0 +1,20 @@
+{
+  "schema": 1,
+  "id": "docs-review-identity",
+  "kind": "repository",
+  "title": "Docs: who pushes what under the review ruleset, adoption of the enforcement layers, eval secret setup",
+  "base": {
+    "ref": "main",
+    "commit": "449e4e209f65a4181929b15449e97e61e7756553"
+  },
+  "baseline": {},
+  "write_scope": [
+    "docs/host-setup.md",
+    "docs/adoption.md",
+    "changes/README.md",
+    "README.md",
+    "evals/README.md",
+    ".agents/skills/sdlc-artifacts/SKILL.md"
+  ],
+  "approvals": []
+}

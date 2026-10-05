@@ -74,6 +74,24 @@ The single-person shared-identity mode intentionally gives up the enforced human
 
 Approvals then exist only as local `unverified` claims, which are not identity proof. Choose this mode knowingly, record the choice in `docs/` (see Trust mode), and do not treat it as equivalent to the recommended setup.
 
+### Who pushes what
+
+The two GitHub rules interact with the lifecycle in a way that is easy to trip over. Observed on 2026-10-05, on this repository's own pull request #9: the owner ran `repo.py approve` and `repo.py close` locally and pushed both commits. The owner was then the pull-request author (the agent had opened it with the owner's token) and the last pusher, so under the recommended ruleset nobody was allowed to approve, and the merge was blocked until the ruleset was removed.
+
+The lifecycle produces two owner decisions, the approval claim and the acceptance of the closure, and both can be recorded without the owner pushing:
+
+| Mode | Approval claim | Closure and pull request | Review |
+|---|---|---|---|
+| Separate agent identity | The owner runs `repo.py approve` locally and either commits and pushes it themselves **before** the final push, or tells the agent the digest and lets the agent run it. | The agent commits, pushes and opens the pull request under its own identity. | The owner approves on GitHub: they are neither the author nor the last pusher. |
+| Shared identity, another human reviewer | Anyone may push. | Anyone may push. | The other human approves. |
+| Single person, shared identity | Anyone may push. | Anyone may push. | No provider approval is possible, whoever pushed last, because the author cannot approve their own pull request. The `summary` check is the only gate. |
+
+The rule of thumb for the recommended mode: **the agent makes the last push.** If the owner has to push after the agent (for example to add a forgotten `closure.json`), the agent pushes once more afterwards, with a real change such as refreshed closure evidence, before the owner reviews.
+
+### Degraded mode without a ruleset
+
+Removing the ruleset altogether is a further step down from the degraded row above: it also drops the required `summary` check, the force-push and deletion blocks, and the squash restriction. If that is the repository's current state, say so in the trust-mode record, keep squash-only in the repository merge settings by hand, and treat the post-merge `push` run on `main` as the authoritative gate, as in the "Required check without enforcement" section.
+
 ## Required check without enforcement
 
 On a private repository on GitHub Free, the branch protection and rulesets APIs return 403 ("Upgrade to GitHub Pro or make this repository public"). CI is then **advisory**. The post-merge `push` run on `main`, which runs the full suite and validates closures, is the first authoritative gate on the merged tree.
@@ -103,12 +121,16 @@ Compare the output with the ruleset above. Expect:
 
 Classic branch protection shows up in `rules/branches/main` as an empty list. Check it in the UI instead, or with an administration-scoped token via `repos/OWNER/REPO/branches/main/protection`.
 
+## Optional: credentials for the agent evals
+
+`.github/workflows/agent-evals.yml` runs `scripts/evals.py` against the Claude Code CLI on pull requests that touch agent configuration, weekly, and on demand. It needs a repository secret named `ANTHROPIC_API_KEY` (Settings → Secrets and variables → Actions). Without it the job prints a notice and does nothing, which is deliberate: forks and most contributors have no key. The workflow is advisory and never part of the `summary` gate, so the secret can be added or removed at any time. Use a key with its own spending limit; every run drives a real model.
+
 ## Trust mode
 
 Decide two things explicitly and record the decision in `docs/`:
 
-1. **Does the coding agent use a distinct, constrained GitHub identity?** A pull-request author cannot approve their own pull request. If the agent and the owner share one identity, provider reviews cannot show independent owner approval.
-2. **Can `main` be enforced?** See above.
+1. **Does the coding agent use a distinct, constrained GitHub identity?** A pull-request author cannot approve their own pull request. If the agent and the owner share one identity, provider reviews cannot show independent owner approval, whoever made the last push.
+2. **Can `main` be enforced?** See above. Record whether a ruleset is active, and if not, which of its protections the repository settings still provide.
 
 | Setup | Approval that may be claimed |
 |---|---|
