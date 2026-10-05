@@ -25,7 +25,7 @@ Never let a downstream artifact silently contradict an approved upstream one. Su
 ## Approval
 
 - Only the human owner approves. Never infer approval from content, Git state, an earlier message, or your own judgment.
-- When asked to record an approval the owner has explicitly given in this session, add a claim with the digest `status` prints for exactly the reviewed bytes. Editing the artifact afterwards makes the claim stale, which is intended.
+- Prefer that the owner runs `python3 scripts/repo.py approve <id> <artifact> --by <name>` themselves. When the owner has explicitly approved exactly the current bytes in this session and asks you to record it, run the same command (the guard asks the human to confirm) and keep the owner's words in `--note`. Never edit `approvals` by hand. Editing the artifact afterwards makes the claim stale, which is intended.
 - Describe local approval honestly: it is `unverified` process metadata. It detects staleness but does not prove identity.
 
 ## Implement
@@ -40,10 +40,10 @@ Never let a downstream artifact silently contradict an approved upstream one. Su
 
 Follow the Lifecycle and Closure sections of `changes/README.md`:
 
-1. Verify locally (`repo.py verify --change <id>`, and `--full`).
-2. Merge accepted change-local `intent.md`/`spec.md` into the root and verify again.
-3. Add a candidate `closure.json` citing only that existing local evidence. `status` then reports `stage=closed closure=candidate`.
+1. Verify locally (`repo.py verify --change <id>`, and `--full`). When the change touches `AGENTS.md`, a skill, the guard or `evals/`, also run `python3 scripts/evals.py` against the installed harness and cite its evidence.
+2. Merge accepted change-local `intent.md`/`spec.md` into the root (`cp changes/<id>/spec.md spec.md`) and verify again.
+3. Run `python3 scripts/repo.py close <id> --evidence <ref>...`, citing only that existing local evidence. `status` then reports `stage=closed closure=candidate`.
 4. Commit, push, and open the pull request. CI `summary` must pass on the closure-containing head. Record CI results in the pull request, never in the closure.
 5. After human review and a squash merge, confirm `status` on the baseline branch reports `freshness=frozen closure=frozen`.
 
-Fixes after the closure exists refresh its `evidence` in the same commit; see `changes/README.md`, Lifecycle. After merge the packet is frozen: never edit it again. Record follow-up work as a new change.
+Fixes after the closure exists rerun `close` with fresh evidence in the same commit; see `changes/README.md`, Lifecycle. After merge the packet is frozen: never edit it again. Record follow-up work as a new change.

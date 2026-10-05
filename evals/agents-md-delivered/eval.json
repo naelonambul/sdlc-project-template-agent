@@ -1,0 +1,28 @@
+{
+  "schema": 1,
+  "description": "AGENTS.md reaches the harness's context and the four core project skills are discovered from the repository.",
+  "harnesses": [
+    "claude",
+    "codex"
+  ],
+  "prompt": "Answer from your loaded context only; do not call any tool. Line 1: \"AGENTS=yes\" if your context contains a document headed \"Repository Agent Instructions\", else \"AGENTS=no\". Line 2: \"SKILLS=\" followed by a comma-separated list of the project skills listed as available to you.",
+  "args": {
+    "claude": [
+      "--disallowedTools",
+      "Read,Bash,Grep,Glob,Edit,Write,Agent"
+    ],
+    "codex": [
+      "--sandbox",
+      "read-only"
+    ]
+  },
+  "expect": {
+    "stdout_contains": [
+      "AGENTS=yes",
+      "sdlc-artifacts",
+      "change-execution",
+      "verification-map",
+      "repository-quality"
+    ]
+  }
+}

@@ -1,0 +1,59 @@
+# Agent evals. Advisory only: deliberately NOT part of the `repository` gate.
+# Evals drive a real harness CLI, which spends model tokens and needs an API
+# credential that forks and most contributors do not have, and their outcome
+# depends on a model rather than on the repository alone. A gate must be
+# deterministic and always reach a terminal result, so this workflow stays
+# separate. Because it is advisory, path filters are acceptable here: it runs
+# when agent configuration changes, weekly, and on demand.
+name: agent-evals
+
+on:
+  pull_request:
+    paths:
+      - AGENTS.md
+      - .agents/**
+      - .claude/**
+      - evals/**
+      - scripts/evals.py
+      - scripts/hooks/**
+  schedule:
+    - cron: "17 6 * * 1"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  evals:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
+        with:
+          python-version: "3.13"
+      - name: Check for API key
+        id: key
+        env:
+          HAS_KEY: ${{ secrets.ANTHROPIC_API_KEY != '' }}
+        run: echo "has_key=$HAS_KEY" >> "$GITHUB_OUTPUT"
+      - name: Run evals (claude)
+        if: steps.key.outputs.has_key == 'true'
+        env:
+          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+        run: |
+          npm install -g @anthropic-ai/claude-code
+          python3 scripts/evals.py --harness claude --require-harness
+      - name: Evals not run
+        if: steps.key.outputs.has_key != 'true'
+        run: echo "::notice::Agent evals were not run because the ANTHROPIC_API_KEY secret is absent."
+      - if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: evidence-evals
+          path: .evidence/
+          include-hidden-files: true
+          if-no-files-found: ignore

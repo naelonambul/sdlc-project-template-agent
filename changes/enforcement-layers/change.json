@@ -1,0 +1,28 @@
+{
+  "schema": 1,
+  "id": "enforcement-layers",
+  "kind": "repository",
+  "title": "Enforcement layers: agent-neutral hooks, agent evals, mechanical approve/close, registered-check warning",
+  "base": {
+    "ref": "main",
+    "commit": "ac572a98bf5bbe7239b33f33b808fa9dd951a5a2"
+  },
+  "baseline": {},
+  "write_scope": [
+    "scripts/",
+    ".claude/settings.json",
+    "evals/",
+    ".github/workflows/agent-evals.yml",
+    "checks.json",
+    "AGENTS.md",
+    "README.md",
+    "REVIEW.md",
+    "changes/README.md",
+    ".agents/skills/sdlc-artifacts/SKILL.md",
+    ".agents/skills/change-execution/SKILL.md",
+    "docs/agent-surfaces.md",
+    "docs/host-setup.md",
+    ".gitignore"
+  ],
+  "approvals": []
+}
