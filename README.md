@@ -54,7 +54,7 @@ The repository enforces its rules in three layers, from hard to soft. Soft layer
 
 ## Scope
 
-The template covers Plan, Design, Build, Test and Deploy as a loop of committed artifacts and gates. The Maintain stage (a trigger that invokes an agent with no person in the path and writes what it finds back as a new intent) is out of scope: the `incident` change kind is the entry point a project would wire a monitor or ticket trigger to, and nothing here runs unattended.
+The template covers Plan, Design, Build, Test and Deploy as a loop of committed artifacts and gates. The Maintain stage (a trigger that invokes an agent with no person in the path and writes what it finds back as a new intent) is out of scope: the `incident` change kind is the entry point a project would wire a monitor or ticket trigger to, and nothing here runs unattended. An `incident` change is reproduce-first: its plan opens with a reproduction that fails on the base, and the same drive passing is its acceptance (`.agents/skills/sdlc-artifacts/SKILL.md`, Incidents; per-platform defaults in `.agents/skills/verification-map/references/platforms.md`).
 
 ## Agent neutrality
 

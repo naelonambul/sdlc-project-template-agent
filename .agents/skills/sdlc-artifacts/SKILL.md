@@ -22,6 +22,15 @@ The lifecycle rules are executable. `python3 scripts/repo.py status --change <id
 
 Never let a downstream artifact silently contradict an approved upstream one. Surface the conflict to the owner.
 
+### Incidents
+
+An `incident` change starts from a report (a ticket, an alert, a monitor) and its plan is reproduce-first:
+
+- **Order of work, step 1** is a reproduction: drive the real product the way the report describes, on the change's base commit, and show it failing. Record what was driven and what was observed as evidence. Use the product's `verify-<app>` skill, or the defaults in the `verification-map` skill's `references/platforms.md`, and read structured state (logs, status codes, accessibility tree, stored state) as the oracle; a screenshot is evidence for the reviewer, not the judgment.
+- **Acceptance** is the same drive passing after the fix, with the registered checks still green. A fix that passed a reproduction which failed before it is far more likely to be right than one that did not; that is the whole point of the order.
+- **No reproduction, no fix.** When the report cannot be reproduced after a real attempt, write what was tried and observed on the ticket and stop the change. Defensive handling without a reproduction is a `behavior` or `implementation` change with its own plan, never an incident fix.
+- **Promote** the reproduction into a replayable, registered check per the `verification-map` skill, so the fix carries its regression test.
+
 ## Approval
 
 - Only the human owner approves. Never infer approval from content, Git state, an earlier message, or your own judgment.

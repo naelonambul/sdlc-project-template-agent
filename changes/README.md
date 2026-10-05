@@ -24,7 +24,7 @@ Create a packet with `python3 scripts/repo.py new <id> --kind <kind> --title <su
 | `intent` | intent, plan | spec | yes |
 | `behavior` | spec, plan | none | yes |
 | `implementation` | plan | none | yes |
-| `incident` | plan | spec | yes |
+| `incident` | plan | spec | yes; the plan starts with a reproduction that fails on the base (see the `sdlc-artifacts` skill, Incidents) |
 | `architecture` | plan | spec | yes |
 | `repository` | plan | none | no: process and tooling only; may not modify an established root intent or spec |
 
