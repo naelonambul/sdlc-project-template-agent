@@ -16,5 +16,13 @@
     "evals/README.md",
     ".agents/skills/sdlc-artifacts/SKILL.md"
   ],
-  "approvals": []
+  "approvals": [
+    {
+      "artifact": "plan.md",
+      "sha256": "sha256:d2fd2d14d8c53f11a5e7b0cb9d20c57f7b6bf9030a1c691fca3406d6cfbd37e7",
+      "by": "naelonambul",
+      "at": "2026-10-05T17:08:15Z",
+      "note": "Owner approved in chat ('\uc2b9\uc778') for digest sha256:d2fd2d14d8c53f11a5e7b0cb9d20c57f7b6bf9030a1c691fca3406d6cfbd37e7; recorded by the agent. Local claim: unverified."
+    }
+  ]
 }
