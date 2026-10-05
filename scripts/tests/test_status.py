@@ -320,6 +320,83 @@ class Surfaces(RepoCase):
         self.write(".claude/skills/demo/SKILL.md", "---\nname: demo\n---\n")
         self.assertFailed(self.status(), "is a copy")
 
+    def settings(self, command):
+        hooks = {"hooks": {"PreToolUse": [{"matcher": "Edit", "hooks": [{"type": "command", "command": command}]}]}}
+        self.write(".claude/settings.json", json.dumps(hooks))
+
+    def hook_script(self, name="guard.py", executable=True):
+        self.write(f"scripts/hooks/{name}", "#!/usr/bin/env python3\n")
+        if executable:
+            (self.root / "scripts/hooks" / name).chmod(0o755)
+
+    def surface_codes(self, result):
+        return {s["code"] for s in result["surface"]}
+
+    def test_wired_executable_hook_is_valid(self):
+        self.hook_script()
+        self.settings('python3 "$CLAUDE_PROJECT_DIR"/scripts/hooks/guard.py claude')
+        self.commit("hooks")
+        result = self.status()
+        self.assertTrue(result["ok"], result["failures"])
+        self.assertNotIn("hook-adapter-missing", self.surface_codes(result))
+
+    def test_hook_pointing_at_missing_script_is_broken(self):
+        self.settings("python3 scripts/hooks/missing.py claude")
+        self.commit("hooks")
+        self.assertFailed(self.status(), "scripts/hooks/missing.py, which is not tracked")
+
+    def test_hook_script_without_exec_bit_is_still_valid(self):
+        self.hook_script(executable=False)  # the adapter runs it through python3
+        self.settings("python3 scripts/hooks/guard.py claude")
+        self.commit("hooks")
+        self.assertTrue(self.status()["ok"])
+
+    def test_invalid_settings_json_is_broken(self):
+        self.write(".claude/settings.json", "{not json")
+        self.commit("hooks")
+        self.assertFailed(self.status(), "not valid JSON")
+
+    def test_unwired_hook_script_is_informational(self):
+        self.hook_script()
+        self.commit("hooks")
+        result = self.status()
+        self.assertTrue(result["ok"])
+        self.assertIn("hook-adapter-missing", self.surface_codes(result))
+
+
+class RegisteredChecks(RepoCase):
+    def configure(self):
+        check = {"id": "control-plane", "argv": ["true"], "cwd": ".", "timeout_seconds": 5, "paths": ["scripts/**"]}
+        self.write("checks.json", json.dumps({"schema": 1, "checks": [check]}))
+
+    def warnings(self):
+        return [s for s in self.status()["surface"] if s["code"] == "checks-unregistered"]
+
+    def test_template_only_tree_does_not_warn(self):
+        self.configure()
+        self.write("scripts/repo.py", "")
+        self.write("docs/notes.md", "")
+        self.commit("template")
+        self.assertEqual(self.warnings(), [])
+
+    def test_product_files_with_only_control_plane_warn(self):
+        self.configure()
+        self.write("src/app.py", "print('hi')\n")
+        self.commit("product")
+        warnings = self.warnings()
+        self.assertEqual(len(warnings), 1)
+        self.assertIn("'src/app.py'", warnings[0]["message"])
+        self.assertTrue(self.status()["ok"])
+
+    def test_registered_product_check_silences_warning(self):
+        self.configure()
+        config = json.loads(self.read("checks.json"))
+        config["checks"].append({"id": "unit", "argv": ["true"], "cwd": ".", "timeout_seconds": 5, "paths": ["src/**"]})
+        self.write("checks.json", json.dumps(config))
+        self.write("src/app.py", "")
+        self.commit("product")
+        self.assertEqual(self.warnings(), [])
+
 
 class CheckWiring(RepoCase):
     WORKFLOW = "jobs:\n  a:\n    steps:\n      - run: python3 scripts/repo.py verify --group core $ARGS\n"

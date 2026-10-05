@@ -39,6 +39,11 @@ Use the `sdlc-artifacts` skill whenever creating, revising, approving, or closin
 - `python3 scripts/repo.py new <id> --kind <kind> --title <summary> [--scope <pattern>]...`: creates a change packet (no branch, commit or approval).
 - `python3 scripts/repo.py status --change <id>`: lifecycle, approval, identity, write-scope, and agent-surface gates.
 - `python3 scripts/repo.py verify --change <id>`: runs the checks registered in `checks.json` that the diff routes to (`--full` for all), and writes evidence to `.evidence/`.
+- `python3 scripts/repo.py approve <id> <artifact> --by <owner>`: records the owner's digest-bound claim for the current bytes, in chain order. The owner runs it, or asks for it explicitly; it is still an `unverified` local claim.
+- `python3 scripts/repo.py close <id> --evidence <ref>...`: writes the candidate `closure.json` from the current packet and root.
+- `python3 scripts/evals.py`: runs the agent regression evals in `evals/` against the installed harness CLIs. `skipped` is never a pass.
+
+`scripts/hooks/guard.py` is the agent-neutral in-session guard: it denies file-tool edits to the root baseline, frozen packets, approvals and closures, and asks before destructive git. `.claude/settings.json` only wires it, so it runs in Claude Code only. A denial names the command to use instead; do not work around it through the shell, which `repo.py status` catches anyway.
 
 Project build, test, lint, format-check, and type-check commands are registered as checks in `checks.json`, not listed here. The generic template needs only Python 3 and Git. Stack toolchains belong to the product that adopts them. Use the `repository-quality` skill to discover or bootstrap them.
 

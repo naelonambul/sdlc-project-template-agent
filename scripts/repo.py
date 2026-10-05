@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Repository control plane: `status`, `verify` and `new`.
+"""Repository control plane: `status`, `verify`, `new`, `approve` and `close`.
 
 Standard library only. `status` computes change lifecycle state from the
 repository's facts and authored claims; nothing it reports is stored as a
@@ -696,7 +696,60 @@ def surface_findings(ctx: Context) -> list[Reason]:
     for name in canonical:
         if not (adapters / name).is_symlink():
             findings.append(Reason("info", "adapter-missing", f".agents/skills/{name} has no .claude/skills adapter"))
+    findings += hook_findings(root, tracked)
     return findings
+
+
+HOOK_SETTINGS = ".claude/settings.json"
+HOOK_DIR = "scripts/hooks"
+
+
+def hook_commands(settings) -> list[str]:
+    """Every hook command string configured in a Claude Code settings object."""
+    out = []
+    for event in (settings.get("hooks") or {}).values() if isinstance(settings, dict) else []:
+        for matcher in event if isinstance(event, list) else []:
+            for hook in (matcher.get("hooks") or []) if isinstance(matcher, dict) else []:
+                if isinstance(hook, dict) and isinstance(hook.get("command"), str):
+                    out.append(hook["command"])
+    return out
+
+
+def hook_findings(root: Path, tracked: set) -> list[Reason]:
+    """A hook adapter must point at tracked scripts under scripts/hooks/; a shipped guard wants an adapter."""
+    findings = []
+    scripts = sorted(p for p in tracked if p.startswith(HOOK_DIR + "/") and p.endswith(".py"))
+    if HOOK_SETTINGS not in tracked:
+        for script in scripts:
+            findings.append(Reason("info", "hook-adapter-missing", f"{script} is not wired by any {HOOK_SETTINGS} hook"))
+        return findings
+    try:
+        settings = json.loads((root / HOOK_SETTINGS).read_text())
+    except (OSError, json.JSONDecodeError) as exc:
+        return [Reason("error", "hook-broken", f"{HOOK_SETTINGS} is not valid JSON: {exc}")]
+    referenced = set()
+    for command in hook_commands(settings):
+        for script in re.findall(rf"{re.escape(HOOK_DIR)}/[\w./-]+", command):
+            referenced.add(script)
+            if script not in tracked:
+                findings.append(Reason("error", "hook-broken", f"{HOOK_SETTINGS} runs {script}, which is not tracked"))
+    for script in scripts:
+        if script not in referenced:
+            findings.append(Reason("info", "hook-adapter-missing", f"{script} is not wired by any {HOOK_SETTINGS} hook"))
+    return findings
+
+
+# Paths the template itself owns. Anything else tracked is product material.
+TEMPLATE_PATHS = (
+    "scripts/", "changes/", ".agents/", ".claude/", ".github/", "docs/", "evals/", ".evidence/",
+    "AGENTS.md", "README.md", "REVIEW.md", "LICENSE", "intent.md", "spec.md", "checks.json",
+    ".gitignore", ".gitattributes",
+)
+TEMPLATE_CHECKS = {"control-plane"}
+
+
+def product_paths(tracked: set) -> list[str]:
+    return sorted(p for p in tracked if not any(p == t or (t.endswith("/") and p.startswith(t)) for t in TEMPLATE_PATHS))
 
 
 
@@ -843,12 +896,22 @@ def config_findings(ctx: Context) -> list[Reason]:
     problems = validate_checks(config)
     if problems:
         return [Reason("error", "checks-invalid", p) for p in problems]
+    findings = []
+    registered = {c["id"] for c in config["checks"]}
+    if registered <= TEMPLATE_CHECKS:
+        tracked = set(filter(None, git(ctx.root, "ls-files", "-z").split("\0")))
+        product = product_paths(tracked)
+        if product:
+            findings.append(Reason(
+                "warn", "checks-unregistered",
+                f"{len(product)} product path(s) are tracked (for example {product[0]!r}) but only the template's "
+                f"{sorted(TEMPLATE_CHECKS)} check is registered in checks.json; use the repository-quality skill to register build, test, lint, format and type checks",
+            ))
     workflow = ctx.root / WORKFLOW
     if not workflow.is_file():
-        return []
+        return findings
     declared = {c.get("group", "core") for c in config["checks"]}
     wired = set(re.findall(r"repo\.py verify\b[^\n]*?--group[ =](\S+)", workflow.read_text()))
-    findings = []
     for group in sorted(declared - wired):
         findings.append(Reason("error", "checks-unwired", f"check group {group!r} has no `repo.py verify --group {group}` job in {WORKFLOW}"))
     for group in sorted(wired - declared):
@@ -1126,6 +1189,129 @@ def cmd_new(args) -> int:
     return 0
 
 
+def packet_json(path: Path, what: str):
+    try:
+        return json.loads(path.read_text())
+    except FileNotFoundError:
+        raise Refusal(f"{what} not found: {path}")
+    except json.JSONDecodeError as exc:
+        raise Refusal(f"{what} is not valid JSON: {exc}")
+
+
+def write_json(path: Path, data) -> None:
+    path.write_text(json.dumps(data, indent=2) + "\n")
+
+
+def approval_claim(root: Path, args) -> tuple[Path, dict, dict]:
+    """Validate an `approve` request; return (change.json path, its data, the new claim)."""
+    cid, artifact = args.id, args.artifact
+    if not ID_RE.match(cid) or cid == TEMPLATE_PACKET:
+        raise Refusal(f"invalid change id {cid!r}")
+    if artifact not in CHAIN:
+        raise Refusal(f"artifact must be one of {list(CHAIN)}")
+    if not args.by.strip():
+        raise Refusal("--by must name the human owner who approved")
+    packet_dir = root / CHANGES / cid
+    path = packet_dir / "change.json"
+    data = packet_json(path, f"{CHANGES}/{cid}/change.json")
+    ctx = Context(root=root, baseline_branch=load_config(root).get("baseline_branch", "main"))
+    st = evaluate_change(ctx, cid)
+    if any(r.code == "invalid-change" for r in st.errors):
+        raise Refusal("; ".join(r.message for r in st.errors if r.code == "invalid-change"))
+    if artifact not in st.artifacts:
+        raise Refusal(f"{artifact} is not in the chain of a {st.kind!r} change ({', '.join(st.artifacts)})")
+    if not (packet_dir / artifact).is_file():
+        raise Refusal(f"{CHANGES}/{cid}/{artifact} does not exist yet; draft it first")
+    if st.closure != "none" or (packet_dir / CLOSURE).exists():
+        raise Refusal("the change already has a closure; record follow-up work as a new change")
+    chain = list(st.artifacts)
+    for upstream in chain[: chain.index(artifact)]:
+        if st.artifacts[upstream]["approval"] == "none":
+            raise Refusal(f"approve {upstream} before {artifact}: artifacts are approved in order {' -> '.join(chain)}")
+    claim = {
+        "artifact": artifact,
+        "sha256": file_digest(packet_dir / artifact),
+        "by": args.by.strip(),
+        "at": _dt.datetime.now(_dt.timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ"),
+    }
+    if args.note:
+        claim["note"] = args.note
+    return path, data, claim
+
+
+def cmd_approve(args) -> int:
+    root = Path(git(Path.cwd(), "rev-parse", "--show-toplevel").strip())
+    try:
+        path, data, claim = approval_claim(root, args)
+    except Refusal as exc:
+        print(f"refused: {exc}", file=sys.stderr)
+        return 1
+    kept = [c for c in data.get("approvals", []) if not (isinstance(c, dict) and c.get("artifact") == args.artifact)]
+    replaced = len(data.get("approvals", [])) - len(kept)
+    data["approvals"] = kept + [claim]
+    write_json(path, data)
+    print(f"recorded approval of {args.artifact} at {claim['sha256']} by {claim['by']} ({claim['at']})"
+          + (f"; replaced {replaced} earlier claim(s) for it" if replaced else ""))
+    print("this is a local, unverified claim: it binds bytes, it does not prove identity")
+    print(f"next: python3 scripts/repo.py status --change {args.id}")
+    return 0
+
+
+def closure_record(root: Path, args) -> tuple[Path, dict]:
+    """Validate a `close` request; return (closure.json path, its content)."""
+    cid = args.id
+    if not ID_RE.match(cid) or cid == TEMPLATE_PACKET:
+        raise Refusal(f"invalid change id {cid!r}")
+    packet_dir = root / CHANGES / cid
+    packet_json(packet_dir / "change.json", f"{CHANGES}/{cid}/change.json")
+    evidence = [e.strip() for e in args.evidence or [] if e and e.strip()]
+    if not evidence:
+        raise Refusal("--evidence is required: cite the local verify evidence (for example the .evidence/<run>/evidence.json path)")
+    ctx = Context(root=root, baseline_branch=load_config(root).get("baseline_branch", "main"))
+    st = evaluate_change(ctx, cid)
+    if st.anchor:
+        raise Refusal(f"the change is already closed on {ctx.baseline_branch!r} (anchor {st.anchor[:12]}); record follow-up work as a new change")
+    blocking = [r for r in st.reasons if r.level in ("error", "pending") and not r.code.startswith("closure")]
+    if blocking:
+        raise Refusal("the change is not ready to close: " + "; ".join(r.message for r in blocking))
+    present = {name for name in CHAIN if (packet_dir / name).is_file()}
+    carried = sorted(present & set(BASELINE))
+    baseline = {}
+    for name in carried:
+        root_digest, _ = root_state(ctx, name)
+        local = file_digest(packet_dir / name)
+        if root_digest != local:
+            raise Refusal(f"accepted {name} has not been merged into the root: cp {CHANGES}/{cid}/{name} {name}")
+        baseline[name] = root_digest
+    refs = []
+    for ref in evidence:
+        candidate = (root / ref) if not Path(ref).is_absolute() else Path(ref)
+        refs.append(f"{ref} {file_digest(candidate)}" if candidate.is_file() else ref)
+    closure = {
+        "schema": SCHEMA,
+        "baseline": baseline,
+        "packet_sha256": packet_digest(worktree_packet(root, cid)),
+        "evidence": refs,
+    }
+    return packet_dir / CLOSURE, closure
+
+
+def cmd_close(args) -> int:
+    root = Path(git(Path.cwd(), "rev-parse", "--show-toplevel").strip())
+    try:
+        path, closure = closure_record(root, args)
+    except Refusal as exc:
+        print(f"refused: {exc}", file=sys.stderr)
+        return 1
+    existed = path.exists()
+    write_json(path, closure)
+    print(f"{'rewrote' if existed else 'wrote'} {CHANGES}/{args.id}/{CLOSURE} (packet {closure['packet_sha256']})")
+    for name, digest in closure["baseline"].items():
+        print(f"  baseline {name}: {digest}")
+    print(f"next: python3 scripts/repo.py status --change {args.id}  (expect stage=closed closure=candidate)")
+    return 0
+
+
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(prog="repo.py", description=__doc__.splitlines()[0])
     sub = parser.add_subparsers(dest="command", required=True)
@@ -1153,6 +1339,14 @@ def build_parser() -> argparse.ArgumentParser:
     new.add_argument("--title", required=True, help="one-line summary")
     new.add_argument("--scope", action="append", metavar="PATTERN", help="write_scope pattern (repeatable)")
     new.add_argument("--with-spec", action="store_true", help="also copy root spec.md (intent, incident, architecture)")
+    approve = sub.add_parser("approve", help="record the owner's digest-bound approval of a chain artifact (run by the owner)")
+    approve.add_argument("id", help="change id")
+    approve.add_argument("artifact", help=f"one of {', '.join(CHAIN)}")
+    approve.add_argument("--by", required=True, help="the human owner who reviewed exactly these bytes")
+    approve.add_argument("--note", help="free-text note stored with the claim")
+    close = sub.add_parser("close", help="write a candidate closure.json from the current packet and root")
+    close.add_argument("id", help="change id")
+    close.add_argument("--evidence", action="append", metavar="REF", help="local verification evidence reference (repeatable); an existing file is recorded with its sha256")
     return parser
 
 
@@ -1165,6 +1359,10 @@ def main(argv=None) -> int:
             return cmd_verify(args)
         if args.command == "new":
             return cmd_new(args)
+        if args.command == "approve":
+            return cmd_approve(args)
+        if args.command == "close":
+            return cmd_close(args)
     except GitError as exc:
         print(f"blocked: {exc}", file=sys.stderr)
         return 2

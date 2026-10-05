@@ -20,10 +20,10 @@ The root `intent.md` and `spec.md` are the durable product baseline. A new produ
 
 1. Create a new repository from this GitHub template and clone it.
 2. Create the `product-init` packet: `python3 scripts/repo.py new <id> --kind product-init --title "<summary>"`. It copies the root `intent.md` and `spec.md` into the packet.
-3. Ask an agent to interrogate the idea until the intent is concrete, then approve `intent.md` by adding a digest-bound claim to `change.json`.
+3. Ask an agent to interrogate the idea until the intent is concrete, then approve `intent.md` yourself: `python3 scripts/repo.py approve <id> intent.md --by <you>` records a digest-bound claim for exactly the bytes you reviewed.
 4. Draft and approve `spec.md`, then the change's `plan.md`, in that order.
 5. Implement only when `python3 scripts/repo.py status --change <id>` reports `readiness=ready`.
-6. Run repository-native validation, review against `REVIEW.md`, merge the accepted intent and spec into the root, add `closure.json`, and open a pull request with `Change-ID: <id>`.
+6. Run repository-native validation, review against `REVIEW.md`, merge the accepted intent and spec into the root, run `python3 scripts/repo.py close <id> --evidence <ref>`, and open a pull request with `Change-ID: <id>`.
 
 See `.agents/skills/sdlc-artifacts/SKILL.md` for the workflow.
 
@@ -33,16 +33,29 @@ See `.agents/skills/sdlc-artifacts/SKILL.md` for the workflow.
 - `REVIEW.md`: shared review rubric.
 - `intent.md`, `spec.md`: durable product baseline (why, and what must be true).
 - `changes/`: one packet per change, with its own plan; `changes/README.md` defines the model.
-- `scripts/repo.py`: `status` computes change state and enforces gates; `verify` runs registered checks with routing and evidence. Standard-library Python only.
-- `checks.json`: the check registry (exact argv, cwd, timeout, routed paths, required tools, group).
+- `scripts/repo.py`: `status` computes change state and enforces gates; `verify` runs registered checks with routing and evidence; `new`, `approve` and `close` write packet records mechanically. Standard-library Python only.
+- `checks.json`: the check registry (exact argv, cwd, timeout, routed paths, required tools, group). `status` warns when product files are tracked but only the template's own check is registered.
+- `scripts/hooks/guard.py`: the agent-neutral in-session guard (deny file-tool edits to the root baseline, frozen packets, closures and approvals; ask before destructive git). `.claude/settings.json` is the thin Claude Code adapter; `status` checks that it points at tracked scripts.
 - `.agents/skills/`: on-demand shared agent procedures and tool policies. `.claude/skills/` holds thin symlink adapters.
-- `evals/`: agent regression evaluations, added only from observed failures.
+- `evals/` and `scripts/evals.py`: agent regression evaluations run against the installed harness CLIs (agent-surface delivery, the guard, the worker brief). Added from observed failures; run by the advisory `agent-evals` workflow, not by the merge gate.
 - `docs/`: supporting, reference, and historical documentation only.
 - `.github/`: the `Change-ID` pull-request template and the `repository` CI workflow. See `docs/host-setup.md` for one-time GitHub settings.
 
 ## Authority model
 
 The root baseline plus approved change packets are the SDLC authority. `docs/` must not override them. Concurrent initiatives are separate change packets; one pull request carries one change.
+
+## Enforcement layers
+
+The repository enforces its rules in three layers, from hard to soft. Soft layers only make violations rare; the hard layer makes them visible.
+
+1. **Hard, after the fact:** `repo.py status` and `verify`, the control-plane tests, and the required `summary` check in CI. These decide. They do not depend on any agent having read anything.
+2. **In session:** `scripts/hooks/guard.py`, called from the agent's pre-edit and pre-command hooks. It denies the file-tool edits that no change should make by hand (root baseline, frozen packets, closures, approvals) and asks the human before destructive git or a shell write to `change.json`/`closure.json`. Shell writes to other protected files are not intercepted; layer 1 catches them. It is friction and an audit trail, not authentication.
+3. **Advisory:** `AGENTS.md`, the skills, `REVIEW.md`, and the evals that regression-test them against a real harness.
+
+## Scope
+
+The template covers Plan, Design, Build, Test and Deploy as a loop of committed artifacts and gates. The Maintain stage (a trigger that invokes an agent with no person in the path and writes what it finds back as a new intent) is out of scope: the `incident` change kind is the entry point a project would wire a monitor or ticket trigger to, and nothing here runs unattended.
 
 ## Agent neutrality
 
@@ -62,7 +75,7 @@ Included shared skills:
 
 Optional tool unavailability must not silently change the SDLC gates.
 
-Claude Code discovers these skills through thin `.claude/skills/<name>` symlinks to `.agents/skills/<name>`, and loads `AGENTS.md` only when no project `CLAUDE.md` shadows it. The template therefore ships no `CLAUDE.md`. Codex reads `AGENTS.md` and discovers `.agents/skills/` natively, with no adapter. See `docs/agent-surfaces.md` for the smoke-tested surfaces and known gaps.
+Claude Code discovers these skills through thin `.claude/skills/<name>` symlinks to `.agents/skills/<name>`, runs the guard through `.claude/settings.json`, and loads `AGENTS.md` only when no project `CLAUDE.md` shadows it. The template therefore ships no `CLAUDE.md`. Codex reads `AGENTS.md` and discovers `.agents/skills/` natively, with no adapter, and has no observed hook integration. See `docs/agent-surfaces.md` for the smoke-tested surfaces and known gaps.
 
 ## Project initialization
 
