@@ -1,0 +1,18 @@
+{
+  "schema": 1,
+  "id": "incident-verification",
+  "kind": "repository",
+  "title": "Reproduce-first incidents and per-platform verification defaults",
+  "base": {
+    "ref": "main",
+    "commit": "c5583dd26e777ab4e8fa5dd72dcfc647e853bc1e"
+  },
+  "baseline": {},
+  "write_scope": [
+    ".agents/skills/verification-map/",
+    ".agents/skills/sdlc-artifacts/SKILL.md",
+    "changes/README.md",
+    "README.md"
+  ],
+  "approvals": []
+}
