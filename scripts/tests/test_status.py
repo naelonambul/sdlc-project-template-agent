@@ -345,11 +345,11 @@ class Surfaces(RepoCase):
         self.commit("hooks")
         self.assertFailed(self.status(), "scripts/hooks/missing.py, which is not tracked")
 
-    def test_non_executable_hook_script_is_broken(self):
-        self.hook_script(executable=False)
+    def test_hook_script_without_exec_bit_is_still_valid(self):
+        self.hook_script(executable=False)  # the adapter runs it through python3
         self.settings("python3 scripts/hooks/guard.py claude")
         self.commit("hooks")
-        self.assertFailed(self.status(), "is not executable")
+        self.assertTrue(self.status()["ok"])
 
     def test_invalid_settings_json_is_broken(self):
         self.write(".claude/settings.json", "{not json")

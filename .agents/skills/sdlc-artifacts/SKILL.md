@@ -25,7 +25,7 @@ Never let a downstream artifact silently contradict an approved upstream one. Su
 ## Approval
 
 - Only the human owner approves. Never infer approval from content, Git state, an earlier message, or your own judgment.
-- Prefer that the owner runs `python3 scripts/repo.py approve <id> <artifact> --by <name>` themselves. When the owner has explicitly approved exactly the current bytes in this session and asks you to record it, run the same command (the guard asks the human to confirm) and keep the owner's words in `--note`. Never edit `approvals` by hand. Editing the artifact afterwards makes the claim stale, which is intended.
+- Prefer that the owner runs `python3 scripts/repo.py approve <id> <artifact> --by <name>` themselves. When the owner has explicitly approved exactly the current bytes in this session and asks you to record it, run the same command (in Claude Code the guard asks the human to confirm) and keep the owner's words in `--note`. Never edit `approvals` by hand. Editing the artifact afterwards makes the claim stale, which is intended.
 - Describe local approval honestly: it is `unverified` process metadata. It detects staleness but does not prove identity.
 
 ## Implement

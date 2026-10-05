@@ -249,6 +249,13 @@ class Scratch(EvalCase):
         r = self.only(self.results(EVAL_STUB_STDOUT="hello", EVAL_STUB_ENV="CLAUDECODE", CLAUDECODE="1"))
         self.assertIn("CLAUDECODE=<unset>", Path(r["stdout_log"]).read_text())
 
+    def test_unrelated_secrets_do_not_reach_the_harness(self):
+        self.case()
+        r = self.only(self.results(EVAL_STUB_STDOUT="hello", EVAL_STUB_ENV="GITHUB_TOKEN", GITHUB_TOKEN="ghp_secret"))
+        self.assertIn("GITHUB_TOKEN=<unset>", Path(r["stdout_log"]).read_text())
+        r = self.only(self.results(EVAL_STUB_STDOUT="hello", EVAL_STUB_ENV="ANTHROPIC_API_KEY", ANTHROPIC_API_KEY="k"))
+        self.assertIn("ANTHROPIC_API_KEY=k", Path(r["stdout_log"]).read_text())
+
     def test_harness_argv(self):
         self.case(harnesses=["claude", "codex"], args={"claude": ["--x"], "codex": ["--json"]})
         report = self.results(EVAL_STUB_STDOUT="hello", EVAL_STUB_ARGV="1")

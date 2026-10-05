@@ -51,7 +51,7 @@ closure:    none | candidate | invalid | frozen
 {"artifact": "plan.md", "sha256": "sha256:<digest printed by status>", "by": "<owner>", "at": "2026-09-23T10:00:00Z"}
 ```
 
-Only the human owner adds a claim, after reviewing exactly those bytes. `python3 scripts/repo.py approve <id> <artifact> --by <owner>` writes it for the current bytes and refuses out-of-order approvals; `repo.py status` prints each artifact's current digest for a claim written by hand. The in-session guard (`scripts/hooks/guard.py`) denies agent edits to `approvals` and asks before an agent runs `approve`.
+Only the human owner adds a claim, after reviewing exactly those bytes. `python3 scripts/repo.py approve <id> <artifact> --by <owner>` writes it for the current bytes and refuses out-of-order approvals; `repo.py status` prints each artifact's current digest for a claim written by hand. In Claude Code, the in-session guard (`scripts/hooks/guard.py`) denies file-tool edits to `approvals` and asks before an agent runs `approve`; elsewhere `status` detects a malformed or stale claim after the fact.
 
 A digest-bound claim yields `approval=unverified`. The digest detects staleness and accidental mismatch. **It is not identity proof**: anyone, an agent included, can compute it. A claim without `sha256` counts as `none`. In solo/manual mode `unverified` is enough for readiness.
 

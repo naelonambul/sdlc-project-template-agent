@@ -234,6 +234,22 @@ def snapshot(tree: Path) -> dict[str, str]:
 # -- running a case ----------------------------------------------------------------
 
 
+ENV_NAMES = {"PATH", "HOME", "USER", "LOGNAME", "SHELL", "TERM", "LANG", "TMPDIR", "TMP", "TEMP", "SSL_CERT_FILE", "SSL_CERT_DIR", "NODE_EXTRA_CA_CERTS", "REQUESTS_CA_BUNDLE"}
+ENV_PREFIXES = ("LC_", "XDG_", "ANTHROPIC_", "CLAUDE_", "CODEX_", "OPENAI_", "HTTP_PROXY", "HTTPS_PROXY", "NO_PROXY", "http_proxy", "https_proxy", "no_proxy", "EVAL_")
+
+
+def harness_env(environ) -> dict[str, str]:
+    """The harness sees only what it needs to run and authenticate, never the caller's other secrets.
+
+    `EVAL_*` passes through for test stubs. `CLAUDECODE` is dropped so the runner works inside a Claude Code session.
+    """
+    return {
+        k: v
+        for k, v in environ.items()
+        if (k in ENV_NAMES or k.startswith(ENV_PREFIXES)) and k != "CLAUDECODE"
+    }
+
+
 def harness_argv(harness: str, prompt: str, args: list[str]) -> list[str]:
     if harness == "claude":
         return ["claude", "-p", prompt, "--output-format", "text", *args]
@@ -292,7 +308,7 @@ def run_case(root: Path, case: Case, harness: str, evidence: Path, require_harne
     result["stderr_log"] = display_path(stderr_log, root)
     timeout = data.get("timeout_seconds", DEFAULT_TIMEOUT)
     argv = harness_argv(harness, data["prompt"], list(data.get("args", {}).get(harness, [])))
-    env = {k: v for k, v in os.environ.items() if k != "CLAUDECODE"}
+    env = harness_env(os.environ)
     try:
         before = snapshot(scratch)
         started = time.monotonic()

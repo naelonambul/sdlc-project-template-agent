@@ -40,13 +40,16 @@ jobs:
         env:
           HAS_KEY: ${{ secrets.ANTHROPIC_API_KEY != '' }}
         run: echo "has_key=$HAS_KEY" >> "$GITHUB_OUTPUT"
+      # The CLI is deliberately unpinned: the evals exist to notice when the
+      # current harness changes behaviour. The install step holds no secret.
+      - name: Install Claude Code
+        if: steps.key.outputs.has_key == 'true'
+        run: npm install -g @anthropic-ai/claude-code
       - name: Run evals (claude)
         if: steps.key.outputs.has_key == 'true'
         env:
           ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
-        run: |
-          npm install -g @anthropic-ai/claude-code
-          python3 scripts/evals.py --harness claude --require-harness
+        run: python3 scripts/evals.py --harness claude --require-harness
       - name: Evals not run
         if: steps.key.outputs.has_key != 'true'
         run: echo "::notice::Agent evals were not run because the ANTHROPIC_API_KEY secret is absent."

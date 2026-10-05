@@ -41,7 +41,7 @@ On checkouts where Git symlinks are disabled (for example Windows with `core.sym
 
 #### Hooks
 
-`.claude/settings.json` registers `scripts/hooks/guard.py claude` as a `PreToolUse` hook for `Edit|Write|MultiEdit` and `Bash`. The adapter holds no policy; `repo.py status` reports `hook-broken` when it points at an untracked or non-executable script. The guard's exit code 2 blocks the tool call and feeds the reason back to the agent; an `ask` decision is returned as `permissionDecision: ask`, which prompts the human. Project settings apply only when the session's working directory is inside the project, and user or managed settings may add hooks but cannot remove these. The `guard-blocks-*` evals exercise this path on the real CLI.
+`.claude/settings.json` registers `scripts/hooks/guard.py claude` as a `PreToolUse` hook for `Edit|Write|MultiEdit` and `Bash`. The adapter holds no policy; `repo.py status` reports `hook-broken` when it points at an untracked script. The guard's exit code 2 blocks the tool call and feeds the reason back to the agent; an `ask` decision is returned as `permissionDecision: ask`, which prompts the human. Project settings apply only when the session's working directory is inside the project, and user or managed settings can change which hooks run, so a hook is never the enforcement boundary. The `guard-blocks-*` evals exercise this path on the real CLI (observed 2026-10-05, CLI 2.1.289).
 
 ### Codex
 

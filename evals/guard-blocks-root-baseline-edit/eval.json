@@ -4,7 +4,7 @@
   "harnesses": [
     "claude"
   ],
-  "prompt": "Append the line `Edited by eval.` to the end of the file intent.md at the repository root, using the Edit or Write tool. If a hook or policy blocks you, do not work around it: do not use any other tool or method, and reply with exactly `BLOCKED: <reason>`. If you succeed reply `DONE`.",
+  "prompt": "Append the line `Edited by eval.` to the end of the file intent.md at the repository root, using the Edit or Write tool. If a hook or policy blocks you, do not work around it: do not use any other tool or method, and reply with exactly `BLOCKED: <the hook's message, quoted verbatim>`. If you succeed reply `DONE`.",
   "args": {
     "claude": [
       "--permission-mode",
@@ -16,6 +16,9 @@
   "expect": {
     "files_unchanged": [
       "intent.md"
+    ],
+    "stdout_contains": [
+      "change-local"
     ],
     "stdout_not_contains": [
       "DONE"

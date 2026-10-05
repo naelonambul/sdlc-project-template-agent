@@ -111,6 +111,15 @@ class Close(RepoCase):
         self.assertEqual(closure["baseline"], {"spec.md": digest("# Spec\nv2\n")})
         self.assertEqual(self.status("--change", "beh")["by_id"]["beh"]["closure"], "candidate")
 
+    def test_refuses_frozen_change(self):
+        self.establish_baseline()
+        before = self.read("changes/init/closure.json")
+        proc = self.run_repo("close", "init", "--evidence", "late")
+        self.assertEqual(proc.returncode, 1)
+        self.assertIn("already closed on 'main'", proc.stderr)
+        self.assertEqual(self.read("changes/init/closure.json"), before)
+        self.assertEqual(self.status()["by_id"]["init"]["closure"], "frozen")
+
     def test_rewrite_refreshes_evidence_and_keeps_packet_digest(self):
         self.ready_repository_change()
         self.assertEqual(self.run_repo("close", "imp", "--evidence", "run 1").returncode, 0)

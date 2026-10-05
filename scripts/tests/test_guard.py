@@ -189,6 +189,12 @@ class CommandRuleTests(GuardCase):
         "cp /tmp/c.json changes/x/closure.json",
         "rm changes/x/closure.json",
         "python3 -c 'open(\"changes/x/change.json\", \"w\")'",
+        "git status\ngit reset --hard",
+        "git status\ngit push -f origin x",
+        "bash -c 'git reset --hard'",
+        "sh -c \"git push -f origin x\"",
+        "python3 scripts/repo.py  approve x plan.md --by me",
+        "jq . /tmp/in.json > changes/x/change.json",
     ]
     ALLOW = [
         "git status",
@@ -198,8 +204,15 @@ class CommandRuleTests(GuardCase):
         "git clean -n",
         "git branch -d merged",
         "git commit -m 'git push --force and rebase'",
+        "git commit -m 'docs: repo.py approve'",
+        "grep 'repo.py approve' README.md",
         "cat changes/x/change.json",
+        "cat changes/x/change.json 2>/dev/null",
+        "jq . changes/x/change.json > /dev/null",
+        "git diff changes/x/change.json > /tmp/p",
+        "cp changes/x/change.json /tmp/backup.json",
         "python3 scripts/repo.py status --change x",
+        "python3 scripts/repo.py close x --evidence y",
         "ls 2>&1",
     ]
 
@@ -305,6 +318,19 @@ class ClaudeAdapterTests(GuardCase):
                 proc = self.claude(garbage)
                 self.assertEqual((proc.returncode, proc.stdout), (0, ""))
                 self.assertTrue(proc.stderr.strip())
+
+    def test_malformed_tool_input_allowed_with_note(self):
+        self.packet("x")
+        payloads = [
+            {"tool_name": "MultiEdit", "tool_input": {"file_path": "changes/x/change.json", "edits": "oops"}, "cwd": str(self.root)},
+            {"tool_name": "Edit", "tool_input": {"file_path": "changes/x/change.json", "old_string": 5, "new_string": None}, "cwd": str(self.root)},
+            {"tool_name": "Bash", "tool_input": {"command": ["not", "a", "string"]}, "cwd": str(self.root)},
+        ]
+        for payload in payloads:
+            with self.subTest(tool=payload["tool_name"]):
+                proc = self.claude(payload)
+                self.assertEqual((proc.returncode, proc.stdout), (0, ""), proc.stderr)
+                self.assertNotIn("Traceback", proc.stderr)
 
 
 class SettingsAdapterTests(unittest.TestCase):

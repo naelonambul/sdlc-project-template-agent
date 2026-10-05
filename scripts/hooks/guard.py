@@ -126,25 +126,66 @@ def decide_path(root: Path, path: str, proposed: str | None) -> tuple[str, str]:
 # command rules
 # --------------------------------------------------------------------------
 
-WRITE_OPERATOR = re.compile(
-    r">|\bsed\s+(?:\S+\s+)*?(?:-\w*i|--in-place)|\btee\b|\bmv\s|\bcp\s|\brm\s|\bpython3?\s+-c\b"
-)
+PACKET_FILE = re.compile(r"(?:^|/)(?:change|closure)\.json$")
+APPROVE = re.compile(r"repo\.py\s+approve\b")
+SHELLS = {"sh", "bash", "zsh", "dash", "ksh"}
 
 
-def split_segments(command: str) -> list[list[str]]:
+def tokenize(command: str) -> list[str]:
+    """Shell-ish tokens, operators kept as their own tokens; newlines count as separators."""
     try:
-        lexer = shlex.shlex(command, posix=True, punctuation_chars=True)
+        lexer = shlex.shlex(command.replace("\n", " ; "), posix=True, punctuation_chars=True)
         lexer.whitespace_split = True
-        tokens = list(lexer)
+        return list(lexer)
     except ValueError:
-        tokens = command.split()
+        return command.split()
+
+
+def is_operator(token: str) -> bool:
+    return bool(token) and all(c in "();<>|&" for c in token)
+
+
+def split_segments(tokens: list[str]) -> list[list[str]]:
+    """Simple commands between operators, with redirection targets dropped."""
     segments: list[list[str]] = [[]]
+    skip = False
     for token in tokens:
-        if token and all(c in "();<>|&" for c in token):
-            segments.append([])
+        if skip:
+            skip = False
+            continue
+        if is_operator(token):
+            if ">" in token or "<" in token:
+                skip = True
+            else:
+                segments.append([])
         else:
             segments[-1].append(token)
     return [s for s in segments if s]
+
+
+def names_packet_file(token: str) -> bool:
+    return bool(PACKET_FILE.search(token))
+
+
+def packet_write(tokens: list[str]) -> bool:
+    """A redirect, tee, in-place edit, move, copy, delete or inline script that targets change.json or closure.json."""
+    for i, token in enumerate(tokens):
+        if is_operator(token) and ">" in token and i + 1 < len(tokens) and names_packet_file(tokens[i + 1]):
+            return True
+    for segment in split_segments(tokens):
+        cmd, args = posixpath.basename(segment[0]), segment[1:]
+        if cmd == "tee" and any(names_packet_file(a) for a in args):
+            return True
+        if cmd == "sed" and any(a == "--in-place" or (a.startswith("-") and not a.startswith("--") and "i" in a) for a in args):
+            if any(names_packet_file(a) for a in args):
+                return True
+        if cmd == "rm" and any(names_packet_file(a) for a in args):
+            return True
+        if cmd in ("mv", "cp") and args and names_packet_file(args[-1]):
+            return True
+        if cmd in ("python", "python3") and "-c" in args and any(names_packet_file(a) or "change.json" in a or "closure.json" in a for a in args):
+            return True
+    return False
 
 
 def git_invocation(segment: list[str]) -> tuple[str, list[str]] | None:
@@ -192,18 +233,27 @@ def git_rule(sub: str, args: list[str]) -> str | None:
     return None
 
 
-def decide_command(command: str) -> tuple[str, str]:
-    for segment in split_segments(command):
+def decide_command(command: str, depth: int = 0) -> tuple[str, str]:
+    tokens = tokenize(command)
+    segments = split_segments(tokens)
+    for segment in segments:
         invocation = git_invocation(segment)
         if invocation:
             rule = git_rule(*invocation)
             if rule:
                 return decision(ASK, f"{rule}: history rewrite or destructive git command; the human confirms")
-    if "repo.py approve" in command:
-        return decision(ASK, "approve: approvals are recorded by the owner; the human confirms")
-    scrubbed = re.sub(r"\d*>&\d+", "", command)
-    if re.search(r"\b(?:change|closure)\.json\b", scrubbed) and WRITE_OPERATOR.search(scrubbed):
+        if APPROVE.search(" ".join(segment)) and any(a.endswith("repo.py") for a in segment):
+            return decision(ASK, "approve: approvals are recorded by the owner; the human confirms")
+    if packet_write(tokens):
         return decision(ASK, "packet-write: shell write to change.json or closure.json; the human confirms")
+    if depth < 3:
+        for segment in segments:
+            if posixpath.basename(segment[0]) in SHELLS and "-c" in segment:
+                script = segment[segment.index("-c") + 1 :]
+                if script:
+                    nested = decide_command(script[0], depth + 1)
+                    if nested[0] != ALLOW:
+                        return nested
     return decision(ALLOW)
 
 
@@ -269,7 +319,11 @@ def run_claude() -> int:
     except ValueError:
         print("guard: unreadable hook input; allowing", file=sys.stderr)
         return 0
-    kind, reason = claude_decision(payload)
+    try:
+        kind, reason = claude_decision(payload)
+    except Exception as exc:  # the guard is friction, never a crash in the agent's loop
+        print(f"guard: cannot evaluate ({type(exc).__name__}: {exc}); allowing", file=sys.stderr)
+        return 0
     if kind == DENY:
         print(reason, file=sys.stderr)
         return 2

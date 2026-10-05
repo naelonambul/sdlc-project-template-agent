@@ -716,7 +716,7 @@ def hook_commands(settings) -> list[str]:
 
 
 def hook_findings(root: Path, tracked: set) -> list[Reason]:
-    """A hook adapter must point at tracked, executable scripts under scripts/hooks/; a shipped guard wants an adapter."""
+    """A hook adapter must point at tracked scripts under scripts/hooks/; a shipped guard wants an adapter."""
     findings = []
     scripts = sorted(p for p in tracked if p.startswith(HOOK_DIR + "/") and p.endswith(".py"))
     if HOOK_SETTINGS not in tracked:
@@ -733,8 +733,6 @@ def hook_findings(root: Path, tracked: set) -> list[Reason]:
             referenced.add(script)
             if script not in tracked:
                 findings.append(Reason("error", "hook-broken", f"{HOOK_SETTINGS} runs {script}, which is not tracked"))
-            elif not os.access(root / script, os.X_OK):
-                findings.append(Reason("error", "hook-broken", f"{script} is not executable"))
     for script in scripts:
         if script not in referenced:
             findings.append(Reason("info", "hook-adapter-missing", f"{script} is not wired by any {HOOK_SETTINGS} hook"))
@@ -1271,6 +1269,8 @@ def closure_record(root: Path, args) -> tuple[Path, dict]:
         raise Refusal("--evidence is required: cite the local verify evidence (for example the .evidence/<run>/evidence.json path)")
     ctx = Context(root=root, baseline_branch=load_config(root).get("baseline_branch", "main"))
     st = evaluate_change(ctx, cid)
+    if st.anchor:
+        raise Refusal(f"the change is already closed on {ctx.baseline_branch!r} (anchor {st.anchor[:12]}); record follow-up work as a new change")
     blocking = [r for r in st.reasons if r.level in ("error", "pending") and not r.code.startswith("closure")]
     if blocking:
         raise Refusal("the change is not ready to close: " + "; ".join(r.message for r in blocking))

@@ -35,7 +35,7 @@ See `.agents/skills/sdlc-artifacts/SKILL.md` for the workflow.
 - `changes/`: one packet per change, with its own plan; `changes/README.md` defines the model.
 - `scripts/repo.py`: `status` computes change state and enforces gates; `verify` runs registered checks with routing and evidence; `new`, `approve` and `close` write packet records mechanically. Standard-library Python only.
 - `checks.json`: the check registry (exact argv, cwd, timeout, routed paths, required tools, group). `status` warns when product files are tracked but only the template's own check is registered.
-- `scripts/hooks/guard.py`: the agent-neutral in-session guard (deny edits to the root baseline, frozen packets, closures and approvals; ask before destructive git). `.claude/settings.json` is the thin Claude Code adapter; `status` checks that it points at tracked, executable scripts.
+- `scripts/hooks/guard.py`: the agent-neutral in-session guard (deny file-tool edits to the root baseline, frozen packets, closures and approvals; ask before destructive git). `.claude/settings.json` is the thin Claude Code adapter; `status` checks that it points at tracked scripts.
 - `.agents/skills/`: on-demand shared agent procedures and tool policies. `.claude/skills/` holds thin symlink adapters.
 - `evals/` and `scripts/evals.py`: agent regression evaluations run against the installed harness CLIs (agent-surface delivery, the guard, the worker brief). Added from observed failures; run by the advisory `agent-evals` workflow, not by the merge gate.
 - `docs/`: supporting, reference, and historical documentation only.
@@ -50,7 +50,7 @@ The root baseline plus approved change packets are the SDLC authority. `docs/` m
 The repository enforces its rules in three layers, from hard to soft. Soft layers only make violations rare; the hard layer makes them visible.
 
 1. **Hard, after the fact:** `repo.py status` and `verify`, the control-plane tests, and the required `summary` check in CI. These decide. They do not depend on any agent having read anything.
-2. **In session:** `scripts/hooks/guard.py`, called from the agent's pre-edit and pre-command hooks. It denies the edits that no change should make by hand and asks the human before destructive git. It is friction and an audit trail, not authentication.
+2. **In session:** `scripts/hooks/guard.py`, called from the agent's pre-edit and pre-command hooks. It denies the file-tool edits that no change should make by hand (root baseline, frozen packets, closures, approvals) and asks the human before destructive git or a shell write to `change.json`/`closure.json`. Shell writes to other protected files are not intercepted; layer 1 catches them. It is friction and an audit trail, not authentication.
 3. **Advisory:** `AGENTS.md`, the skills, `REVIEW.md`, and the evals that regression-test them against a real harness.
 
 ## Scope
