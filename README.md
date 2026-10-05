@@ -37,7 +37,7 @@ See `.agents/skills/sdlc-artifacts/SKILL.md` for the workflow.
 - `checks.json`: the check registry (exact argv, cwd, timeout, routed paths, required tools, group). `status` warns when product files are tracked but only the template's own check is registered.
 - `scripts/hooks/guard.py`: the agent-neutral in-session guard (deny file-tool edits to the root baseline, frozen packets, closures and approvals; ask before destructive git). `.claude/settings.json` is the thin Claude Code adapter; `status` checks that it points at tracked scripts.
 - `.agents/skills/`: on-demand shared agent procedures and tool policies. `.claude/skills/` holds thin symlink adapters.
-- `evals/` and `scripts/evals.py`: agent regression evaluations run against the installed harness CLIs (agent-surface delivery, the guard, the worker brief). Added from observed failures; run by the advisory `agent-evals` workflow, not by the merge gate.
+- `evals/` and `scripts/evals.py`: agent regression evaluations run against the installed harness CLIs (agent-surface delivery, the guard, the worker brief). Added from observed failures; run locally on demand, never by CI or the merge gate.
 - `docs/`: supporting, reference, and historical documentation only.
 - `.github/`: the `Change-ID` pull-request template and the `repository` CI workflow. See `docs/host-setup.md` for one-time GitHub settings.
 
@@ -83,7 +83,7 @@ When a project chooses its application stack, establish the repository-native bu
 
 ## Template releases
 
-Template versions are Git tags plus release notes. A downstream project adopts a tag, not a moving `main`; `docs/adoption.md` covers adopting and upgrading. Settings such as branch protection and the optional `ANTHROPIC_API_KEY` secret for the agent evals are never inherited from a GitHub template and must be configured per repository (`docs/host-setup.md`).
+Template versions are Git tags plus release notes. A downstream project adopts a tag, not a moving `main`; `docs/adoption.md` covers adopting and upgrading. Settings such as branch protection are never inherited from a GitHub template and must be configured per repository (`docs/host-setup.md`).
 
 ## Source material
 

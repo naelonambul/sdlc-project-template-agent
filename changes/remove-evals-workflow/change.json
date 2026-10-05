@@ -15,5 +15,13 @@
     "README.md",
     "evals/README.md"
   ],
-  "approvals": []
+  "approvals": [
+    {
+      "artifact": "plan.md",
+      "sha256": "sha256:ae2997d1487aa524d2c92ec713a1d01d66c0b1f0d65ed2f654e082aaa18c1315",
+      "by": "naelonambul",
+      "at": "2026-10-05T17:18:43Z",
+      "note": "Owner approved in chat (\"\uc2b9\uc778\") after reviewing the plan digest ae2997d1"
+    }
+  ]
 }

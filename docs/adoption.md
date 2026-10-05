@@ -51,7 +51,6 @@ python3 <release>/scripts/repo.py new adopt-sdlc-template --kind repository \
   --scope .github/workflows/repository.yml --scope .github/pull_request_template.md \
   --scope .agents/skills/ --scope .claude/skills/ --scope .claude/settings.json \
   --scope scripts/hooks/ --scope scripts/evals.py --scope evals/ \
-  --scope .github/workflows/agent-evals.yml \
   --scope checks.json --scope AGENTS.md --scope REVIEW.md \
   --scope .gitignore --scope .gitattributes --scope docs/history/ --scope plan.md
 ```
@@ -61,7 +60,7 @@ Adjust the scope to what the plan actually touches:
 - add each tracked `CLAUDE.md` that has to change, and any `CLAUDE.local.md` that has to be removed (step 4);
 - add each existing workflow file you edit;
 - add the paths of anything you retire into `docs/history/`, and the file where you record the trust mode (step 7);
-- drop `scripts/hooks/`, `.claude/settings.json`, `scripts/evals.py`, `evals/` and `agent-evals.yml` if the repository chooses not to install the guard or the evals. They are optional layers; `repo.py status` and CI work without them.
+- drop `scripts/hooks/`, `.claude/settings.json`, `scripts/evals.py` and `evals/` if the repository chooses not to install the guard or the evals. They are optional layers; `repo.py status` and CI work without them.
 
 On the existing-product path, never include the root `intent.md` or `spec.md`. A `repository` change may not modify an established baseline, and `status` blocks the change if it does.
 
@@ -101,7 +100,6 @@ Each file falls into one of three groups.
   - `.claude/settings.json`: if the repository has none, copy the release's. If it has one, add the release's `PreToolUse` entries for `Edit|Write|MultiEdit` and `Bash` that run `python3 "$CLAUDE_PROJECT_DIR"/scripts/hooks/guard.py claude`, and keep the project's other settings. Every `scripts/hooks/` script the file names must be tracked.
 
   `status` reports each violation as an error.
-- **`.github/workflows/agent-evals.yml`.** Copy the release's if the repository installs the evals. It is advisory and needs an `ANTHROPIC_API_KEY` secret to do anything; see the host guide.
 - **`REVIEW.md`.** Add the template's review passes to any existing review policy, and replace review rules that belong to an earlier process.
 - **`.gitignore`.** Add `.evidence/` and `__pycache__/` if they are not there yet.
 - **`.gitattributes`.** Add the template's LF rules for `changes/**` and `checks.json`, and for `intent.md` and `spec.md` unless step 3 found CRLF, because approvals bind exact bytes.
@@ -168,7 +166,7 @@ An upgrade is one `repository` change, `template-upgrade-<tag>`. Its `write_scop
    ```
 
    List only the skill directories, adapters and eval cases the repository installed, for example `.agents/skills/sdlc-artifacts .claude/skills/sdlc-artifacts`, instead of the whole `.agents/skills`, `.claude/skills` and `evals`, so skipped optional pieces are not added back. The diff includes files the new tag adds or removes. The repository's copies should equal the old tag's. If they don't, find out why before overwriting.
-3. Apply that diff. Re-merge the hand-merged files, including the `control-plane` entry of `checks.json`, the template's jobs in `repository.yml`, the hook entries of `.claude/settings.json` and `agent-evals.yml`, from the new tag's versions. Read the new tag's release notes for any step that needs manual work.
+3. Apply that diff. Re-merge the hand-merged files, including the `control-plane` entry of `checks.json`, the template's jobs in `repository.yml` and the hook entries of `.claude/settings.json`, from the new tag's versions. Read the new tag's release notes for any step that needs manual work.
 4. Run the control-plane tests and `verify --full`, record the new tag and commit in the plan, and close the change as usual.
 
 There is no upgrade automation. Real upgrades will show whether it is worth adding.
