@@ -64,6 +64,6 @@ Each run writes `.evidence/evals/<UTC run id>/`: `<case>.<harness>.stdout.log`, 
 
 Model output varies between runs. Before changing a case after a failure, rerun it and read the stdout log; never weaken an expectation to make a run pass.
 
-## CI
+## Not run in CI
 
-`.github/workflows/agent-evals.yml` runs the `claude` cases on pull requests that touch agent configuration, weekly, and on demand, when the `ANTHROPIC_API_KEY` repository secret is present (`docs/host-setup.md`, "Optional: credentials for the agent evals"). Without it the job prints a notice and the cases are not run, so a green `evals` job is only meaningful when the secret exists. It is advisory: it is not part of the `repository` gate, because evals spend tokens, need a credential, and depend on a model.
+The evals are a local tool. They run with the operator's own harness login, spend tokens, and depend on a model, so no workflow runs them and they are never part of the `repository` gate. Run them when a change touches `AGENTS.md`, a skill, the guard or a case (the `sdlc-artifacts` skill asks for this before closing such a change), and when an agent seems to have stopped following the repository rules, which usually means a harness update changed how it loads them. Cite the `.evidence/evals/<run>/` directory in the pull request.

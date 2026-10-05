@@ -121,10 +121,6 @@ Compare the output with the ruleset above. Expect:
 
 Classic branch protection shows up in `rules/branches/main` as an empty list. Check it in the UI instead, or with an administration-scoped token via `repos/OWNER/REPO/branches/main/protection`.
 
-## Optional: credentials for the agent evals
-
-`.github/workflows/agent-evals.yml` runs `scripts/evals.py` against the Claude Code CLI on pull requests that touch agent configuration, weekly, and on demand. It needs a repository secret named `ANTHROPIC_API_KEY` (Settings → Secrets and variables → Actions). Without it the job prints a notice and does nothing, which is deliberate: forks and most contributors have no key. The workflow is advisory and never part of the `summary` gate, so the secret can be added or removed at any time. Use a key with its own spending limit; every run drives a real model.
-
 ## Trust mode
 
 Decide two things explicitly and record the decision in `docs/`:

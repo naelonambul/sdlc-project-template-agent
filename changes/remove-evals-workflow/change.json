@@ -1,0 +1,27 @@
+{
+  "schema": 1,
+  "id": "remove-evals-workflow",
+  "kind": "repository",
+  "title": "Remove the advisory agent-evals CI workflow; evals stay a local tool",
+  "base": {
+    "ref": "main",
+    "commit": "0e834c70dd63bf6dc3caf5fb22918064c4a5fdf9"
+  },
+  "baseline": {},
+  "write_scope": [
+    ".github/workflows/agent-evals.yml",
+    "docs/host-setup.md",
+    "docs/adoption.md",
+    "README.md",
+    "evals/README.md"
+  ],
+  "approvals": [
+    {
+      "artifact": "plan.md",
+      "sha256": "sha256:ae2997d1487aa524d2c92ec713a1d01d66c0b1f0d65ed2f654e082aaa18c1315",
+      "by": "naelonambul",
+      "at": "2026-10-05T17:18:43Z",
+      "note": "Owner approved in chat (\"\uc2b9\uc778\") after reviewing the plan digest ae2997d1"
+    }
+  ]
+}
