@@ -1,0 +1,23 @@
+{
+  "schema": 1,
+  "id": "codex-hook-adapter",
+  "kind": "repository",
+  "title": "Codex PreToolUse adapter for the guard",
+  "base": {
+    "ref": "main",
+    "commit": "9a4f975885932acb9d4b79a33557062935a38676"
+  },
+  "baseline": {},
+  "write_scope": [
+    "scripts/hooks/guard.py",
+    "scripts/hooks/README.md",
+    "scripts/repo.py",
+    "scripts/tests/test_guard.py",
+    "scripts/tests/test_status.py",
+    ".codex/hooks.json",
+    "docs/agent-surfaces.md",
+    "AGENTS.md",
+    "README.md"
+  ],
+  "approvals": []
+}
