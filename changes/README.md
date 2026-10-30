@@ -110,8 +110,10 @@ Rerunning `close` after a fix rewrites the file with fresh evidence. See Lifecyc
 
 `baseline` lists exactly the root artifacts the packet carries. `packet_sha256` covers the packet without `closure.json`. The closure never names a commit.
 
-A pull request can only validate a **candidate** closure: approvals current, deltas merged, digests matching the candidate tree, and evidence present. After merge, the **authoritative anchor** is derived from the baseline branch's first-parent history. It is the first commit whose tree contains `closure.json` while its first parent's tree does not. That is the squash commit (the recommended default), the merge commit, or the rebased commit that adds the file.
+A pull request can only validate a **candidate** closure: approvals current, deltas merged, digests matching the candidate tree, and evidence present. After merge, the **authoritative anchor** is derived from the baseline branch's first-parent history. It is the newest first-parent commit that introduces the `closure.json` on the branch tip: its tree has the file and its first parent's does not. That is the squash commit (the recommended default), the merge commit, or the rebased commit that adds the file.
 
 The change is `frozen` once its digests verify at that anchor. From then on, any byte difference under `changes/<id>/` relative to the anchor is an integrity failure. Later root baseline changes do not stale a frozen change, because it was verified at its own anchor.
+
+A closed packet stays on the baseline branch. Removing its `closure.json` or the whole packet fails `status`, so a pull request cannot do it, and that includes a plain `git revert` of the closing squash commit. To undo a merged change, open a new change that restores the files. The only exception is removing the template's packets in the Quick start, which commits to the baseline branch before it is protected.
 
 Shallow history cannot establish anchors or bases, so it blocks. CI fetches full history.

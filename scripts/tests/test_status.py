@@ -321,16 +321,17 @@ class Closure(RepoCase):
         self.assertEqual(result["by_id"]["init"]["closure"], "invalid")
 
     def test_candidate_closure_is_valid_before_merge(self):
-        self.packet("init", kind="product-init", artifacts={"intent.md": "# I\n", "spec.md": "# S\n", "plan.md": "# P\n"})
+        self.git("switch", "-q", "-c", "change/init")
+        self.packet("init", kind="product-init", scope=["intent.md", "spec.md"], artifacts={"intent.md": "# I\n", "spec.md": "# S\n", "plan.md": "# P\n"})
         self.approve("init", "intent.md", "spec.md", "plan.md")
         self.write("intent.md", "# I\n")
         self.write("spec.md", "# S\n")
         self.close("init")
-        self.commit("base")  # nothing yet on another branch; anchor on main is this commit
-        self.git("switch", "-q", "-c", "change/next")
-        self.git("branch", "-q", "-f", "main", "HEAD~1")
-        change = self.status("--change", "init")["by_id"]["init"]
+        self.commit("close on the branch")
+        result = self.status("--change", "init")
+        change = result["by_id"]["init"]
         self.assertEqual((change["stage"], change["closure"], change["readiness"]), ("closed", "candidate", "ready"))
+        self.assertTrue(result["ok"], result["failures"])
 
     def test_closure_before_approval_is_blocked(self):
         self.packet("alpha", kind="repository")
@@ -377,6 +378,48 @@ class Closure(RepoCase):
         result = self.status()
         self.assertIn("frozen-integrity", self.codes(result, "init"))
         self.assertFailed(result, "closed packet changed after closure anchor")
+
+    def test_deleted_frozen_closure_fails(self):
+        self.establish_baseline()
+        self.git("switch", "-q", "-c", "change/init")
+        self.git("rm", "-q", "changes/init/closure.json")
+        self.commit("reopen")
+        self.assertFailed(self.status("--change", "init"), "removed from the candidate")
+        self.write("pr.md", "Change-ID: init\n")
+        self.assertFailed(self.status("--branch=", "--pr-body", "pr.md", "--base", "main", "--head", "HEAD"), "removed from the candidate")
+
+    def test_deleted_frozen_packet_fails_for_another_change(self):
+        self.establish_baseline()
+        self.git("switch", "-q", "-c", "change/alpha")
+        self.packet("alpha", kind="repository", scope=["changes/**"])
+        self.approve("alpha", "plan.md")
+        self.git("rm", "-rq", "changes/init")
+        self.commit("remove init")
+        self.assertFailed(self.status("--change", "alpha"), "init: frozen packet removed from the candidate")
+
+    def test_deletion_on_the_baseline_branch_passes(self):
+        self.establish_baseline()
+        self.git("rm", "-rq", "changes/init")
+        self.commit("remove the closed packet")
+        self.assertTrue(self.status()["ok"])
+
+    def test_deleted_id_can_be_reused(self):
+        self.establish_baseline()
+        self.git("rm", "-rq", "changes/init")
+        self.commit("remove the closed packet")
+        self.git("switch", "-q", "-c", "change/init")
+        self.packet("init", kind="repository", scope=["src/**"])
+        self.approve("init", "plan.md")
+        self.close("init")
+        self.commit("reuse the id")
+        result = self.status("--change", "init")
+        self.assertEqual(result["by_id"]["init"]["closure"], "candidate")
+        self.assertTrue(result["ok"], result["failures"])
+        self.git("switch", "-q", "main")
+        self.git("merge", "-q", "--squash", "change/init")
+        anchor = self.commit("merge the reused id")
+        change = self.status()["by_id"]["init"]
+        self.assertEqual((change["closure"], change["closure_anchor"]), ("frozen", anchor))
 
     def test_frozen_change_survives_later_baseline_evolution(self):
         self.establish_baseline()
