@@ -61,6 +61,7 @@ Codex also lists user-level and built-in skills alongside the repository's. Only
 | 2026-09-24 | Claude Code CLI 2.1.280 | no `CLAUDE.md`, adapters present | yes | 7/7 |
 | 2026-09-24 | Codex CLI 0.156.1 | `codex exec --sandbox read-only`, no adapters | yes | 7/7 (plus user-level and built-in skills) |
 | 2026-10-05 | Claude Code CLI 2.1.289 | no `CLAUDE.md`, adapters and `.claude/settings.json` hooks present; probes run non-interactively in a scratch copy | yes (no, with a shadowing `CLAUDE.md`) | 4/4 core skills checked; guard denied the root `intent.md` edit and the approval edit |
+| 2026-10-30 | Claude Code CLI 2.1.314 | no `CLAUDE.md`, adapters and `.claude/settings.json` hooks present; probes run non-interactively in a scratch copy | yes (no, with a shadowing `CLAUDE.md`) | 4/4 core skills; guard asked on commands placed after a comment line |
 
 The desktop app is **not verified**. Re-run the procedure below from a desktop session before claiming support. No other agent surface has been tested. Cursor is not a target.
 

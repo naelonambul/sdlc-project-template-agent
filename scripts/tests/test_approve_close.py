@@ -31,6 +31,25 @@ class Approve(RepoCase):
         self.assertEqual([c["sha256"] for c in claims], [digest("# Plan v2\n")])
         self.assertNotIn("stale-approval", self.codes(self.status(), "imp"))
 
+    def test_plan_claim_binds_write_scope_and_upstream_claims_do_not(self):
+        self.packet("init", kind="product-init", scope=["src/**"], artifacts={"intent.md": "# I\n", "spec.md": "# S\n", "plan.md": "# P\n"})
+        for name in ("intent.md", "spec.md", "plan.md"):
+            proc = self.run_repo("approve", "init", name, "--by", "owner")
+            self.assertEqual(proc.returncode, 0, proc.stderr)
+        claims = {c["artifact"]: c for c in json.loads(self.read("changes/init/change.json"))["approvals"]}
+        self.assertNotIn("write_scope_sha256", claims["intent.md"])
+        self.assertNotIn("write_scope_sha256", claims["spec.md"])
+        self.assertRegex(claims["plan.md"]["write_scope_sha256"], r"^sha256:[0-9a-f]{64}$")
+
+    def test_reapproval_rebinds_a_changed_scope_without_an_artifact_edit(self):
+        self.packet("imp", kind="repository", scope=["src/**"])
+        self.run_repo("approve", "imp", "plan.md", "--by", "owner")
+        self.set_scope("imp", ["src/**", "docs/**"])
+        self.assertIn("stale-approval", self.codes(self.status(), "imp"))
+        proc = self.run_repo("approve", "imp", "plan.md", "--by", "owner")
+        self.assertEqual(proc.returncode, 0, proc.stderr)
+        self.assertEqual(self.status("--change", "imp")["by_id"]["imp"]["readiness"], "ready")
+
     def test_refuses_out_of_order(self):
         self.packet("init", kind="product-init", artifacts={"intent.md": "# I\n", "spec.md": "# S\n", "plan.md": "# P\n"})
         proc = self.run_repo("approve", "init", "plan.md", "--by", "owner")

@@ -91,10 +91,23 @@ class PathRuleTests(GuardCase):
         code, out = self.path("changes/x/change.json", self.change_json("x", write_scope=["src/**"]))
         self.assertEqual((code, out["decision"]), (0, "allow"))
 
+    def test_write_scope_change_after_plan_approval_denied(self):
+        self.packet("imp", kind="repository", scope=["src/**", "docs/**"])
+        self.approve("imp", "plan.md")
+        code, out = self.path("changes/imp/change.json", self.change_json("imp", write_scope=["src/**", "docs/**", "**"]))
+        self.assertEqual((code, out["decision"]), (2, "deny"))
+        self.assertIn("change-scope", out["reason"])
+
+    def test_write_scope_reorder_after_plan_approval_allowed(self):
+        self.packet("imp", kind="repository", scope=["src/**", "docs/**"])
+        self.approve("imp", "plan.md")
+        code, out = self.path("changes/imp/change.json", self.change_json("imp", write_scope=["docs/**", "src/**"]))
+        self.assertEqual((code, out["decision"]), (0, "allow"))
+
     def test_existing_approvals_kept_allowed(self):
         self.packet("x")
         self.approve("x", "plan.md")
-        code, out = self.path("changes/x/change.json", self.change_json("x", write_scope=["a"]))
+        code, out = self.path("changes/x/change.json", self.change_json("x", title="renamed"))
         self.assertEqual((code, out["decision"]), (0, "allow"))
 
     def test_no_proposed_content_denied(self):
@@ -230,6 +243,35 @@ class CommandRuleTests(GuardCase):
                 self.assertEqual((code, out["decision"]), (0, "allow"))
 
 
+class CommentHandlingTests(GuardCase):
+    ASK = (
+        "# note\ngit reset --hard",
+        "# note\ngit push --force origin main",
+        "# record it\npython3 scripts/repo.py approve x plan.md",
+        "# fix claim\necho x > changes/x/change.json",
+        "# don't stop\ngit reset --hard",
+        "echo start # note\ngit push --force origin main",
+        "bash -c '# note\ngit reset --hard'",
+        "bash -c 'echo start # note\ngit push --force origin main'",
+    )
+    ALLOW = (
+        "echo a#b",
+        "git log --grep '#1'",
+        "git commit -m 'title\n\n# not a comment'",
+        "git commit -m \"it's #1\"",
+        "# git reset --hard",
+        "echo ok # git push --force",
+    )
+
+    def test_commands_after_a_comment_are_inspected(self):
+        for command in self.ASK:
+            self.assertEqual(self.command(command)[1]["decision"], "ask", command)
+
+    def test_hash_that_hides_nothing_is_allowed(self):
+        for command in self.ALLOW:
+            self.assertEqual(self.command(command)[1]["decision"], "allow", command)
+
+
 class ClaudeAdapterTests(GuardCase):
     def test_edit_root_intent_denied_with_stderr(self):
         proc = self.claude(
@@ -254,7 +296,7 @@ class ClaudeAdapterTests(GuardCase):
         proc = self.claude(
             {
                 "tool_name": "Edit",
-                "tool_input": {"file_path": str(self.root / "changes/x/change.json"), "old_string": '"write_scope": []', "new_string": '"write_scope": ["src/**"]'},
+                "tool_input": {"file_path": str(self.root / "changes/x/change.json"), "old_string": '"commit": ""', "new_string": '"commit": "abc"'},
                 "cwd": str(self.root),
             }
         )

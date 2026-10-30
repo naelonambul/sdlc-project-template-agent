@@ -144,6 +144,41 @@ class Approval(RepoCase):
         self.assertFailed(result, "bound to different bytes")
 
 
+class ScopeBinding(RepoCase):
+    def approved(self):
+        self.packet("imp", kind="repository", scope=["src/**", "docs/**"])
+        self.run_repo("approve", "imp", "plan.md", "--by", "owner")
+
+    def test_widened_scope_is_stale_and_blocked(self):
+        self.approved()
+        self.set_scope("imp", ["src/**", "docs/**", "**"])
+        result = self.status("--change", "imp")
+        change = result["by_id"]["imp"]
+        self.assertIn("stale-approval", self.codes(result, "imp"))
+        self.assertEqual((change["readiness"], change["freshness"]), ("blocked", "stale"))
+
+    def test_reordered_scope_stays_ready(self):
+        self.approved()
+        self.set_scope("imp", ["docs/**", "src/**"])
+        self.assertEqual(self.status("--change", "imp")["by_id"]["imp"]["readiness"], "ready")
+
+    def test_plan_claim_without_scope_binding_blocks_an_open_packet(self):
+        self.packet("imp", kind="repository", scope=["src/**"])
+        self.approve("imp", "plan.md", bind_scope=False)
+        result = self.status("--change", "imp")
+        self.assertIn("unbound-scope", self.codes(result, "imp"))
+        self.assertEqual(result["by_id"]["imp"]["readiness"], "blocked")
+
+    def test_frozen_packet_without_scope_binding_stays_frozen(self):
+        self.packet("imp", kind="repository")
+        self.approve("imp", "plan.md", bind_scope=False)
+        self.close("imp")
+        self.commit("close imp")
+        change = self.status()["by_id"]["imp"]
+        self.assertEqual((change["closure"], change["freshness"]), ("frozen", "frozen"))
+        self.assertNotIn("unbound-scope", self.codes(self.status(), "imp"))
+
+
 class WriteScope(RepoCase):
     def test_path_escape_in_scope_is_invalid(self):
         for bad in ("../outside", "/etc/passwd", "src/../../x", "C:/win", "a\\b"):

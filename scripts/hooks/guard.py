@@ -93,6 +93,15 @@ def approvals_of(text: str) -> object:
     return data.get("approvals", [])
 
 
+def scope_of(text: str) -> list:
+    scope = json.loads(text).get("write_scope", [])
+    return sorted(scope, key=str) if isinstance(scope, list) else [scope]
+
+
+def plan_approved(approvals: list) -> bool:
+    return any(isinstance(claim, dict) and claim.get("artifact") == "plan.md" for claim in approvals)
+
+
 def decide_path(root: Path, path: str, proposed: str | None) -> tuple[str, str]:
     rel = relative_path(root, path)
     if rel is None:
@@ -119,6 +128,8 @@ def decide_path(root: Path, path: str, proposed: str | None) -> tuple[str, str]:
             return decision(DENY, approvals_reason + " (proposed content is not valid JSON)")
         if new != current:
             return decision(DENY, approvals_reason)
+        if plan_approved(current) and scope_of(proposed) != scope_of((root / rel).read_text()):
+            return decision(DENY, "change-scope: write_scope is bound to the plan approval; the owner re-runs repo.py approve after it changes")
     return decision(ALLOW)
 
 
@@ -131,11 +142,44 @@ APPROVE = re.compile(r"repo\.py\s+approve\b")
 SHELLS = {"sh", "bash", "zsh", "dash", "ksh"}
 
 
+def strip_shell_comments(command: str) -> str:
+    """Drop comments line by line and turn unquoted newlines into separators."""
+    out: list[str] = []
+    quote = None
+    word_start = True
+    i = 0
+    while i < len(command):
+        c = command[i]
+        if c == "\\" and quote != "'":
+            if command[i + 1 : i + 2] == "\n":  # line continuation
+                i += 2
+                continue
+            out.append(command[i : i + 2])
+            i += 2
+            word_start = False
+            continue
+        if quote:
+            quote = None if c == quote else quote
+        elif c in "'\"":
+            quote = c
+        elif c == "#" and word_start:
+            end = command.find("\n", i)
+            if end < 0:
+                break
+            i = end
+            continue
+        out.append(" ; " if c == "\n" and not quote else c)
+        word_start = quote is None and c in " \t\n;&|()"
+        i += 1
+    return "".join(out)
+
+
 def tokenize(command: str) -> list[str]:
     """Shell-ish tokens, operators kept as their own tokens; newlines count as separators."""
     try:
-        lexer = shlex.shlex(command.replace("\n", " ; "), posix=True, punctuation_chars=True)
+        lexer = shlex.shlex(strip_shell_comments(command), posix=True, punctuation_chars=True)
         lexer.whitespace_split = True
+        lexer.commenters = ""
         return list(lexer)
     except ValueError:
         return command.split()

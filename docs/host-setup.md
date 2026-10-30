@@ -4,7 +4,7 @@ GitHub does not copy repository settings, rulesets, or merge settings from a tem
 
 ## The setup, in two trust stages
 
-The repository has two actors: the owner, and a coding agent that works under its own GitHub App identity (here `mini26-agent[bot]`). The agent commits, pushes and opens every pull request. The owner's decisions are recorded in the repository as `repo.py approve` claims on the change artifacts.
+The repository has two actors: the owner, and a coding agent that works under its own GitHub App identity. The agent commits, pushes and opens every pull request. The owner's decisions are recorded in the repository as `repo.py approve` claims on the change artifacts.
 
 | | Now | Target |
 |---|---|---|

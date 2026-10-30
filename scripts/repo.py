@@ -27,6 +27,7 @@ CHANGES = "changes"
 TEMPLATE_PACKET = "_template"
 CLOSURE = "closure.json"
 CHAIN = ("intent.md", "spec.md", "plan.md")
+PLAN = CHAIN[-1]
 BASELINE = ("intent.md", "spec.md")
 UNESTABLISHED = "<!-- sdlc:baseline-unestablished -->"
 ID_RE = re.compile(r"^[a-z0-9](?:[a-z0-9-]{0,62}[a-z0-9])?$")
@@ -46,7 +47,7 @@ KINDS = {
 }
 CHANGE_KEYS = {"schema", "id", "kind", "title", "base", "baseline", "write_scope", "approvals"}
 CLOSURE_KEYS = {"schema", "baseline", "packet_sha256", "evidence"}
-APPROVAL_KEYS = {"artifact", "sha256", "by", "at", "note"}
+APPROVAL_KEYS = {"artifact", "sha256", "write_scope_sha256", "by", "at", "note"}
 
 
 class GitError(RuntimeError):
@@ -284,6 +285,11 @@ def validate_change(st: ChangeStatus, data) -> bool:
     return ok
 
 
+def scope_digest(scope: list) -> str:
+    """Digest of the write_scope patterns; their order carries no meaning."""
+    return sha256_bytes(json.dumps(sorted(scope), separators=(",", ":")).encode())
+
+
 def evaluate_change(ctx: Context, change_id: str) -> ChangeStatus:
     st = ChangeStatus(change_id)
     packet_dir = ctx.root / CHANGES / change_id
@@ -313,6 +319,7 @@ def evaluate_change(ctx: Context, change_id: str) -> ChangeStatus:
     # approvals --------------------------------------------------------------
     approved_at = {}
     stale_approval = False
+    unbound_scope = False
     for claim in data.get("approvals", []):
         if not isinstance(claim, dict) or set(claim) - APPROVAL_KEYS:
             st.add("error", "invalid-approval", f"approval claims only use keys {sorted(APPROVAL_KEYS)}")
@@ -333,6 +340,14 @@ def evaluate_change(ctx: Context, change_id: str) -> ChangeStatus:
             stale_approval = True
             st.add("error", "stale-approval", f"approval for {artifact} is bound to different bytes; re-approve the current content")
             continue
+        if artifact == PLAN:
+            bound = claim.get("write_scope_sha256")
+            if bound is None:
+                unbound_scope = True
+            elif bound != scope_digest(data.get("write_scope", [])):
+                stale_approval = True
+                st.add("error", "stale-approval", f"write_scope changed since {artifact} was approved; the owner re-runs repo.py approve {change_id} {artifact}")
+                continue
         approved_at[artifact] = min(when, approved_at.get(artifact, when))
 
     st.artifacts = {
@@ -367,6 +382,9 @@ def evaluate_change(ctx: Context, change_id: str) -> ChangeStatus:
     if (packet_dir / CLOSURE).exists():
         st.stage = "closed"
         check_closure(ctx, st, data, present, chain, approved_at)
+    # A frozen change was approved before scope binding existed, or verified with it at its anchor.
+    if unbound_scope and st.closure != "frozen":
+        st.add("error", "unbound-scope", f"the {PLAN} approval does not bind write_scope; the owner re-runs repo.py approve {change_id} {PLAN}")
 
     # inherited baseline: a frozen change was verified at its own anchor, so later
     # legitimate root evolution does not make it stale.
@@ -1234,6 +1252,8 @@ def approval_claim(root: Path, args) -> tuple[Path, dict, dict]:
         "by": args.by.strip(),
         "at": _dt.datetime.now(_dt.timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ"),
     }
+    if artifact == PLAN:
+        claim["write_scope_sha256"] = scope_digest(data.get("write_scope", []))
     if args.note:
         claim["note"] = args.note
     return path, data, claim
