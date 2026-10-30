@@ -1,0 +1,24 @@
+{
+  "schema": 1,
+  "id": "readme-host-setup-step",
+  "kind": "repository",
+  "title": "Add the host setup step to the README Quick start",
+  "base": {
+    "ref": "main",
+    "commit": "e3313ef70bc52dca2e89059cffc1336aab0f50d6"
+  },
+  "baseline": {},
+  "write_scope": [
+    "README.md"
+  ],
+  "approvals": [
+    {
+      "artifact": "plan.md",
+      "sha256": "sha256:4ff574f57bb2cbc13f71f6203a440a5eb507cb0f9943a6f34e0ff1e43680ec2d",
+      "by": "naelonambul",
+      "at": "2026-10-30T14:05:52Z",
+      "write_scope_sha256": "sha256:be3ae3b6479236a18da3e876a0de9dfe9ae2428896d83c3e804db008861b12d0",
+      "note": "Owner approved in chat (\"\uc2b9\uc778\") after reviewing plan digest 4ff574f5"
+    }
+  ]
+}
