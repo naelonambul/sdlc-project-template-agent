@@ -19,11 +19,19 @@ The root `intent.md` and `spec.md` are the durable product baseline. A new produ
 ## Quick start
 
 1. Create a new repository from this GitHub template and clone it.
-2. Create the `product-init` packet: `python3 scripts/repo.py new <id> --kind product-init --title "<summary>"`. It copies the root `intent.md` and `spec.md` into the packet.
-3. Ask an agent to interrogate the idea until the intent is concrete, then approve `intent.md` yourself: `python3 scripts/repo.py approve <id> intent.md --by <you>` records a digest-bound claim for exactly the bytes you reviewed. The agent commits and pushes it.
-4. Draft and approve `spec.md`, then the change's `plan.md`, in that order.
-5. Implement only when `python3 scripts/repo.py status --change <id>` reports `readiness=ready`.
-6. Run repository-native validation, review against `REVIEW.md`, merge the accepted intent and spec into the root, run `python3 scripts/repo.py close <id> --evidence <ref>`, and open a pull request with `Change-ID: <id>`.
+2. Remove the template's own closed change packets. Do this before protecting `main`, because it commits directly to it, and include the push: until then `status` reports the deletions as several touched packets.
+
+   ```sh
+   find changes -mindepth 1 -maxdepth 1 -type d ! -name _template -exec git rm -rq {} +
+   git commit -m "Remove the template's closed change packets"
+   git push origin main
+   ```
+
+3. Create the `product-init` packet: `python3 scripts/repo.py new <id> --kind product-init --title "<summary>"`. It copies the root `intent.md` and `spec.md` into the packet.
+4. Ask an agent to interrogate the idea until the intent is concrete, then approve `intent.md` yourself: `python3 scripts/repo.py approve <id> intent.md --by <you>` records a digest-bound claim for exactly the bytes you reviewed. The agent commits and pushes it.
+5. Draft and approve `spec.md`, then the change's `plan.md`, in that order.
+6. Implement only when `python3 scripts/repo.py status --change <id>` reports `readiness=ready`.
+7. Run repository-native validation, review against `REVIEW.md`, merge the accepted intent and spec into the root, run `python3 scripts/repo.py close <id> --evidence <ref>`, and open a pull request with `Change-ID: <id>`.
 
 See `.agents/skills/sdlc-artifacts/SKILL.md` for the workflow.
 

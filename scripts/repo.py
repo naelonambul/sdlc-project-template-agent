@@ -1064,6 +1064,11 @@ def compute_status(ctx: Context, args) -> dict:
     return result
 
 
+def folded(change: dict, active: str | None) -> bool:
+    """A healthy frozen packet that is not being worked on; its detail stays in --json."""
+    return change["id"] != active and change["closure"] == "frozen" and not change["reasons"]
+
+
 def print_status(result: dict):
     if result["active"]:
         print(f"active change: {result['active']} (from {result['active_source']})")
@@ -1072,6 +1077,8 @@ def print_status(result: dict):
     for err in result["identity_errors"]:
         print(f"  ! {err}")
     for ch in result["changes"]:
+        if folded(ch, result["active"]):
+            continue
         mark = "*" if ch["id"] == result["active"] else " "
         print(f"{mark} {ch['id']} [{ch['kind']}]")
         print(f"    stage={ch['stage']} freshness={ch['freshness']} approval={ch['approval']} readiness={ch['readiness']} closure={ch['closure']}")
@@ -1081,6 +1088,9 @@ def print_status(result: dict):
             print(f"    {name}: {art['sha256']} approval={art['approval']}")
         for r in ch["reasons"]:
             print(f"    - {r['level']}: {r['message']}")
+    frozen = sum(folded(ch, result["active"]) for ch in result["changes"])
+    if frozen:
+        print(f"frozen: {frozen}")
     for r in result["surface"]:
         if r["level"] != "info":
             print(f"surface {r['level']}: {r['message']}")

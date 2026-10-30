@@ -1,0 +1,26 @@
+{
+  "schema": 1,
+  "id": "status-output-and-instance-trim",
+  "kind": "repository",
+  "title": "Fold frozen packets in status output and remove template packets from new projects",
+  "base": {
+    "ref": "main",
+    "commit": "a6c5f3015b78a11e4f1c5382d61a657a6ac9026d"
+  },
+  "baseline": {},
+  "write_scope": [
+    "scripts/repo.py",
+    "scripts/tests/test_status.py",
+    "README.md"
+  ],
+  "approvals": [
+    {
+      "artifact": "plan.md",
+      "sha256": "sha256:bef011ae041d03165146e0ba8fd01619043cfb0df415b3fda58c28f996d23f08",
+      "by": "naelonambul",
+      "at": "2026-10-30T13:24:39Z",
+      "write_scope_sha256": "sha256:281c85b53832ee42f2d9e39e181b856170cdc4c07ddef3d7f776b8dc8b32dbc5",
+      "note": "Owner approved in chat (\"\uc2b9\uc778\") after reviewing plan digest bef011ae"
+    }
+  ]
+}
