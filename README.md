@@ -19,7 +19,7 @@ The root `intent.md` and `spec.md` are the durable product baseline. A new produ
 ## Quick start
 
 1. Create a new repository from this GitHub template and clone it.
-2. Remove the template's own closed change packets. Do this before protecting `main`, because it commits directly to it, and include the push: until then `status` reports the deletions as several touched packets.
+2. Remove the template's own closed change packets. Do this before protecting `main`, because it commits directly to it, and include the push: until then `status` fails with `frozen packet removed from the candidate`, which is expected.
 
    ```sh
    find changes -mindepth 1 -maxdepth 1 -type d ! -name _template -exec git rm -rq {} +

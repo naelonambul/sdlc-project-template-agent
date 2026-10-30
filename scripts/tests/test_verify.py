@@ -1,6 +1,8 @@
 """Fixtures for `repo.py verify`: routing, statuses, evidence."""
 
 import json
+import os
+import subprocess
 import sys
 import unittest
 from pathlib import Path
@@ -144,6 +146,15 @@ class Verify(RepoCase):
             record = repo.run_check(ctx, check("src"), self.root.parent / "ev" / "src.log")
         self.assertEqual(record["status"], "blocked")
         self.assertIn("evidence log is missing", record["reason"])
+
+
+class FixtureIsolation(unittest.TestCase):
+    def test_importing_the_test_package_drops_repository_locating_git_variables(self):
+        code = "import os, scripts.tests; print(sorted({'GIT_DIR', 'GIT_WORK_TREE'} & set(os.environ)))"
+        env = {**os.environ, "GIT_DIR": "/nonexistent/git", "GIT_WORK_TREE": "/nonexistent/tree"}
+        proc = subprocess.run([PY, "-c", code], cwd=REPO_PY.parents[1], env=env, capture_output=True, text=True)
+        self.assertEqual(proc.returncode, 0, proc.stderr)
+        self.assertEqual(proc.stdout.strip(), "[]")
 
 
 if __name__ == "__main__":

@@ -1,0 +1,27 @@
+{
+  "schema": 1,
+  "id": "fixture-git-isolation",
+  "kind": "repository",
+  "title": "Keep control-plane fixtures out of the caller's Git data, and correct the setup docs",
+  "base": {
+    "ref": "main",
+    "commit": "89911b434d39811950efabbfdc59e6b1bd21cda6"
+  },
+  "baseline": {},
+  "write_scope": [
+    "scripts/tests/__init__.py",
+    "scripts/tests/test_verify.py",
+    "README.md",
+    "docs/agent-surfaces.md"
+  ],
+  "approvals": [
+    {
+      "artifact": "plan.md",
+      "sha256": "sha256:d56b1fbcdf45b1b8bd61f2c59c846cd4fff49b408dc0bce811e0bb136c67902f",
+      "by": "naelonambul",
+      "at": "2026-10-30T22:54:04Z",
+      "write_scope_sha256": "sha256:fcdf86d439822b3ada96bafaec124466fb47279109504dbb40f7ee22e573fd11",
+      "note": "Owner approved in chat (\"\uc2b9\uc778\") after reviewing digest d56b1fbc"
+    }
+  ]
+}
