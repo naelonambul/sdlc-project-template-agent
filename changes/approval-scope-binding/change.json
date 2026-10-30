@@ -1,0 +1,31 @@
+{
+  "schema": 1,
+  "id": "approval-scope-binding",
+  "kind": "repository",
+  "title": "Bind write_scope to the plan approval and stop guard comment bypass",
+  "base": {
+    "ref": "main",
+    "commit": "9a4f975885932acb9d4b79a33557062935a38676"
+  },
+  "baseline": {},
+  "write_scope": [
+    "scripts/repo.py",
+    "scripts/hooks/guard.py",
+    "scripts/hooks/README.md",
+    "scripts/tests/",
+    "changes/README.md",
+    "changes/_template/",
+    "docs/agent-surfaces.md",
+    "docs/host-setup.md"
+  ],
+  "approvals": [
+    {
+      "artifact": "plan.md",
+      "sha256": "sha256:d869960b16b76991ce2153655a9b50d26ead9f17e58c830b5cb7602b1ca4b167",
+      "by": "naelonambul",
+      "at": "2026-10-30T13:12:37Z",
+      "write_scope_sha256": "sha256:35eae2a7a632621b721bf9edfd052ed6a17666eb2aaf1e85b99222b7be1cdb88",
+      "note": "Owner approved in chat (\"\uc2b9\uc778\uc778\ub370 2\ubc88\uc740 \ud558\uc9c0\ub9d0\uc790\") after reviewing plan digest d869960b; \"2\ubc88\" is the separate dogtailor-v3 host decision. Rebound once to add write_scope_sha256; plan bytes and write_scope unchanged since that approval."
+    }
+  ]
+}

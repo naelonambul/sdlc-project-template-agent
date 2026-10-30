@@ -87,13 +87,20 @@ class RepoCase(unittest.TestCase):
         }
         self.write(f"changes/{cid}/change.json", json.dumps(data, indent=2) + "\n")
 
-    def approve(self, cid, *names, at="2026-09-23T10:00:{:02d}Z", by="owner"):
+    def set_scope(self, cid, scope):
+        path = self.root / "changes" / cid / "change.json"
+        data = json.loads(path.read_text())
+        data["write_scope"] = list(scope)
+        path.write_text(json.dumps(data, indent=2) + "\n")
+
+    def approve(self, cid, *names, at="2026-09-23T10:00:{:02d}Z", by="owner", bind_scope=True):
         path = self.root / "changes" / cid / "change.json"
         data = json.loads(path.read_text())
         for i, name in enumerate(names):
-            data["approvals"].append(
-                {"artifact": name, "sha256": digest(self.read(f"changes/{cid}/{name}")), "by": by, "at": at.format(i)}
-            )
+            claim = {"artifact": name, "sha256": digest(self.read(f"changes/{cid}/{name}")), "by": by, "at": at.format(i)}
+            if name == "plan.md" and bind_scope:
+                claim["write_scope_sha256"] = digest(json.dumps(sorted(data["write_scope"]), separators=(",", ":")))
+            data["approvals"].append(claim)
         path.write_text(json.dumps(data, indent=2) + "\n")
 
     def establish_baseline(self):
