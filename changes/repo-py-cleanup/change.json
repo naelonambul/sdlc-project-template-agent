@@ -1,0 +1,24 @@
+{
+  "schema": 1,
+  "id": "repo-py-cleanup",
+  "kind": "repository",
+  "title": "Remove duplication from repo.py and split its longest functions, with no behavior change",
+  "base": {
+    "ref": "main",
+    "commit": "bde3a65a16ed75e4aeaad5722311c64f8996a1d9"
+  },
+  "baseline": {},
+  "write_scope": [
+    "scripts/repo.py"
+  ],
+  "approvals": [
+    {
+      "artifact": "plan.md",
+      "sha256": "sha256:0b22958a0ed084ef2361f8d01a75aa95177dac65d0906215418bc8bb0fe3cc94",
+      "by": "naelonambul",
+      "at": "2026-10-30T13:36:23Z",
+      "write_scope_sha256": "sha256:e497bcf7b24ed0dc94ee0d8a1f4f6eaaaacb3b895f7454eb90f39df7400b43d4",
+      "note": "Owner approved in chat (\"\uc2b9\uc778\") after reviewing revised plan digest 0b22958a; revision keeps log_digest and drops the line-count criterion"
+    }
+  ]
+}
