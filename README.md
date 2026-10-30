@@ -27,7 +27,7 @@ The root `intent.md` and `spec.md` are the durable product baseline. A new produ
    git push origin main
    ```
 
-3. Configure the repository once, as `docs/host-setup.md` describes: the GitHub App account opens pull requests, your account reviews and merges them, and `main` is protected.
+3. Configure the repository once, as `docs/host-setup.md` describes: add it to the GitHub App's installation, so the App account can open pull requests, your account reviews and merges them, and `main` is protected.
 4. Create the `product-init` packet: `python3 scripts/repo.py new <id> --kind product-init --title "<summary>"`. It copies the root `intent.md` and `spec.md` into the packet.
 5. Ask an agent to interrogate the idea until the intent is concrete, then approve `intent.md` yourself: `python3 scripts/repo.py approve <id> intent.md --by <you>` records a digest-bound claim for exactly the bytes you reviewed. The agent commits and pushes it.
 6. Draft and approve `spec.md`, then the change's `plan.md`, in that order.
