@@ -64,7 +64,7 @@ An agent-side hook or tool policy that refuses agent edits to `approvals` adds f
 ## Identity and write scope
 
 - **Local.** `--change <id>` is authoritative. A branch named `change/<id>` or `change/<id>/...`, or a diff that touches exactly one packet, is a convenience inference only. Disagreement or ambiguity blocks.
-- **Pull request.** The body carries `Change-ID: <id>`. CI passes it explicitly, and a missing, repeated or unknown ID blocks. One PR is one change.
+- **Pull request.** The body carries `Change-ID: <id>`. CI passes it explicitly, and a missing, repeated or unknown ID blocks. One PR is one change: `status` in this mode fails unless the named packet has a candidate closure and the diff touches no other packet except `changes/_template/`.
 - **Scope.** Every changed path between the base (the PR base, or the merge-base with the baseline branch) and the candidate must fall inside `changes/<id>/` or match a `write_scope` pattern (`*`, `?`, `**`, trailing `/`). Patterns are relative POSIX paths with no `.` or `..` segments. `repo.py new` adds each root artifact the packet carries, so its approved copy can replace the root.
 
 ## Lifecycle
@@ -78,7 +78,7 @@ The ordered path for every change, with what `python3 scripts/repo.py status --c
 | 3 | Implement inside `write_scope`; run `repo.py verify --change <id>`, and `--full` before closing | unchanged |
 | 4 | Merge accepted change-local `intent.md`/`spec.md` into the root; verify again | unchanged |
 | 5 | Add a candidate `closure.json` citing the step 4 evidence | `stage=closed freshness=current readiness=ready closure=candidate` |
-| 6 | The agent commits (`git add` the new `closure.json`), pushes, and opens one pull request with `Change-ID: <id>` | the CI `status` job validates the candidate |
+| 6 | The agent commits (`git add` the new `closure.json`), pushes, and opens one pull request with `Change-ID: <id>` | the CI `status` job validates the candidate and fails without one |
 | 7 | CI `summary` must pass on the head that contains `closure.json`; record the result in the pull request | unchanged |
 | 8 | The owner reviews the pull request and squash-merges it | — |
 | 9 | The post-merge `push` run on the baseline branch passes; confirm the anchor | `stage=closed freshness=frozen closure=frozen`, anchored at the merge (squash) commit |
