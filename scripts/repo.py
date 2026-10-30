@@ -945,6 +945,24 @@ def run_check(ctx: Context, check: dict, log_path: Path) -> dict:
     return {**record, "status": "passed", "reason": "exit code 0"}
 
 
+def candidate_digest(root: Path, cid: str | None) -> str:
+    """Digest of the candidate's files, leaving out evidence and the change's own closure."""
+    closure = f"{CHANGES}/{cid}/{CLOSURE}"
+    digest = hashlib.sha256()
+    for rel in sorted(set(git(root, "ls-files", "-co", "--exclude-standard", "-z").split("\0"))):
+        path = root / rel
+        if not rel or rel == closure or rel.startswith(".evidence/"):
+            continue
+        if path.is_symlink():
+            data = os.readlink(path).encode()
+        elif path.is_file():
+            data = path.read_bytes()
+        else:
+            continue
+        digest.update(f"{rel}\0{sha256_bytes(data)}\n".encode())
+    return "sha256:" + digest.hexdigest()
+
+
 def source_identity(ctx: Context) -> dict:
     commit = git(ctx.root, "rev-parse", "HEAD", check=False)
     dirty = git(ctx.root, "status", "--porcelain", "--untracked-files=normal", check=False)
@@ -1007,6 +1025,7 @@ def cmd_verify(args) -> int:
     decisions, routing = route(ctx, checks, args.full)
     run_id = _dt.datetime.now(_dt.timezone.utc).strftime("%Y%m%dT%H%M%S%fZ")
     out_dir = Path(args.evidence_dir or ctx.root / ".evidence") / run_id
+    tree = candidate_digest(ctx.root, active.id)
     results = []
     for check in checks:
         group = check.get("group", "core")
@@ -1022,16 +1041,18 @@ def cmd_verify(args) -> int:
             record = run_check(ctx, check, out_dir / f"{check['id']}.log")
             record["route"] = reason
             results.append(record)
+    stable = candidate_digest(ctx.root, active.id) == tree
     evidence = {
         "schema": SCHEMA,
         "run_id": run_id,
-        "source": source_identity(ctx),
+        "source": {**source_identity(ctx), "tree_sha256": tree},
         "change": active.id,
         "groups": sorted(groups) or "all",
         "routing": routing,
         # Complete only when no check was left unrun. A group-filtered run is a
-        # partial execution unit, never a full verification on its own.
-        "complete": not any(r["status"] == "not-run" for r in results),
+        # partial execution unit, never a full verification on its own. Files that
+        # changed during the run were not the files the checks saw.
+        "complete": stable and not any(r["status"] == "not-run" for r in results),
         "checks": results,
     }
     if not args.dry_run:
@@ -1048,8 +1069,11 @@ def cmd_verify(args) -> int:
         not_run = [r["id"] for r in results if r["status"] == "not-run"]
         if not_run:
             print(f"INCOMPLETE: {len(not_run)} check(s) not run: {not_run}")
+        if not stable:
+            print("INCOMPLETE: files changed during the run")
         if not args.dry_run:
-            print(f"evidence: {out_dir / 'evidence.json'}")
+            path = out_dir / "evidence.json"
+            print(f"evidence: {path.relative_to(ctx.root) if path.is_relative_to(ctx.root) else path}")
     bad = [r for r in results if r["status"] in ("failed", "blocked")]
     return 1 if bad else 0
 
@@ -1347,7 +1371,7 @@ def cmd_approve(args) -> int:
     return 0
 
 
-def evidence_problem(data, cid: str, head: str) -> str | None:
+def evidence_problem(data, cid: str, head: str, registered: list[str], tree: str) -> str | None:
     """Why a parsed evidence file is not a passing verify run of this change at HEAD."""
     if not isinstance(data, dict):
         return "not JSON evidence"
@@ -1355,18 +1379,38 @@ def evidence_problem(data, cid: str, head: str) -> str | None:
         return f"it was not produced by repo.py verify --change {cid}"
     if data.get("complete") is not True:
         return "the verify run is incomplete"
-    bad = [c.get("id") for c in data.get("checks", []) if not isinstance(c, dict) or c.get("status") in ("failed", "blocked")]
+    checks = data.get("checks")
+    if not checks or not isinstance(checks, list) or not all(isinstance(c, dict) for c in checks):
+        return "it has no check results"
+    statuses = {c.get("id"): c.get("status") for c in checks}
+    bad = {i: s for i, s in statuses.items() if s != "passed"}
+    bad.update({i: "missing" for i in registered if i not in statuses})
     if bad:
-        return f"checks failed or blocked: {bad}"
+        return f"not every check passed in a full run: {bad}"
     source = data.get("source")
     if not isinstance(source, dict) or source.get("commit") != head:
         return "its source commit is not HEAD; verify again"
+    if source.get("tree_sha256") != tree:
+        return "files changed since that run; verify again"
     return None
+
+
+def evidence_ref(root: Path, ref: str) -> str:
+    """A file reference relative to the root; anything that is not a file stays free text."""
+    candidate = root / ref  # an absolute ref replaces root
+    if not candidate.is_file():
+        return ref
+    try:
+        return candidate.resolve().relative_to(root.resolve()).as_posix()
+    except ValueError:
+        raise Refusal(f"--evidence {ref} is outside the repository") from None
 
 
 def check_verify_evidence(root: Path, cid: str, refs: list[str]) -> None:
     """At least one reference must be a passing verify run of this change at HEAD."""
     head = git(root, "rev-parse", "HEAD").strip()
+    registered = [c.get("id") for c in load_config(root).get("checks", [])]
+    tree = candidate_digest(root, cid)
     problems = []
     for ref in refs:
         path = root / ref
@@ -1374,7 +1418,7 @@ def check_verify_evidence(root: Path, cid: str, refs: list[str]) -> None:
             problems.append(f"{ref}: not an existing file")
             continue
         try:
-            problem = evidence_problem(json.loads(path.read_text()), cid, head)
+            problem = evidence_problem(json.loads(path.read_text()), cid, head, registered, tree)
         except (OSError, ValueError):
             problem = "not JSON evidence"
         if problem is None:
@@ -1389,7 +1433,7 @@ def closure_record(root: Path, args) -> tuple[Path, dict]:
     check_change_id(cid)
     packet_dir = root / CHANGES / cid
     packet_json(packet_dir / "change.json", f"{CHANGES}/{cid}/change.json")
-    evidence = [e.strip() for e in args.evidence or [] if e and e.strip()]
+    evidence = [evidence_ref(root, e.strip()) for e in args.evidence or [] if e and e.strip()]
     if not evidence:
         raise Refusal("--evidence is required: cite the local verify evidence (for example the .evidence/<run>/evidence.json path)")
     ctx = Context(root=root, baseline_branch=baseline_branch(root))
@@ -1411,7 +1455,7 @@ def closure_record(root: Path, args) -> tuple[Path, dict]:
     check_verify_evidence(root, cid, evidence)
     refs = []
     for ref in evidence:
-        candidate = root / ref  # an absolute ref replaces root
+        candidate = root / ref
         refs.append(f"{ref} {file_digest(candidate)}" if candidate.is_file() else ref)
     closure = {
         "schema": SCHEMA,

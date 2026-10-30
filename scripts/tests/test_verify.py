@@ -106,6 +106,26 @@ class Verify(RepoCase):
         stored = json.loads((log.parent / "evidence.json").read_text())
         self.assertEqual(stored["checks"][0]["status"], "passed")
 
+    def test_evidence_binds_the_verified_files(self):
+        self.configure(check("src"))
+        self.write("src/a.txt", "x\n")
+        first = self.verify()["source"]["tree_sha256"]
+        self.assertEqual(self.verify()["source"]["tree_sha256"], first)
+        self.write("src/a.txt", "y\n")
+        self.assertNotEqual(self.verify()["source"]["tree_sha256"], first)
+
+    def test_files_changed_during_the_run_leave_it_incomplete(self):
+        self.configure(check("src", code="open('src/made.txt', 'w').write('x')"))
+        self.write("src/a.txt", "x\n")
+        self.assertFalse(self.verify()["complete"])
+
+    def test_printed_evidence_path_is_relative(self):
+        self.configure(check("src"))
+        self.write("src/a.txt", "x\n")
+        proc = self.run_repo("verify")
+        self.assertEqual(proc.returncode, 0, proc.stderr)
+        self.assertRegex(proc.stdout, r"(?m)^evidence: \.evidence/\S+/evidence\.json$")
+
     def test_shell_string_argv_is_rejected(self):
         bad = check("src")
         bad["argv"] = f"{PY} -c 'print(1)'"

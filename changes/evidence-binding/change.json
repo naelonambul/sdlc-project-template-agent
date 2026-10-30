@@ -1,0 +1,29 @@
+{
+  "schema": 1,
+  "id": "evidence-binding",
+  "kind": "repository",
+  "title": "Bind closure evidence to real check results and the verified files",
+  "base": {
+    "ref": "main",
+    "commit": "595062e39fe27f77a83b1a3f3432464f744c7994"
+  },
+  "baseline": {},
+  "write_scope": [
+    "scripts/repo.py",
+    "scripts/tests/support.py",
+    "scripts/tests/test_approve_close.py",
+    "scripts/tests/test_verify.py",
+    "changes/README.md",
+    "scripts/tests/test_new.py"
+  ],
+  "approvals": [
+    {
+      "artifact": "plan.md",
+      "sha256": "sha256:133026d8ea163c1667c9c6b1446dddad68da86351672a14e5f29183b8fafd4ca",
+      "by": "naelonambul",
+      "at": "2026-10-30T15:15:12Z",
+      "write_scope_sha256": "sha256:4e64cc449c4e51f324c4aaaaeb5759b81a9a6ed7d7f6d980ba58a3aff9065f6a",
+      "note": "Owner re-approved in chat (\"\uc2b9\uc778\") revision 2 at plan digest 133026d8"
+    }
+  ]
+}
