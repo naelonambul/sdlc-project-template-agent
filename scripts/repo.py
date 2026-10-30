@@ -492,14 +492,25 @@ def validate_closure(st: ChangeStatus, closure, carried: set) -> bool:
 
 
 def find_closure_anchor(ctx: Context, change_id: str) -> str | None:
-    """First commit on the baseline branch's first-parent chain that introduces closure.json."""
+    """Newest first-parent commit that introduces the closure.json on the baseline branch's tip."""
     path = f"{CHANGES}/{change_id}/{CLOSURE}"
-    log = git(ctx.root, "log", "--first-parent", "--reverse", "--format=%H", ctx.baseline_ref, "--", path)
+    if tree_file(ctx.root, ctx.baseline_ref, path) is None:
+        return None
+    log = git(ctx.root, "log", "--first-parent", "--format=%H", ctx.baseline_ref, "--", path)
     for commit in log.split():
         parent = git(ctx.root, "rev-parse", "--verify", "--quiet", commit + "^1", check=False)
         if tree_file(ctx.root, commit, path) is not None and (not parent or tree_file(ctx.root, parent.strip(), path) is None):
             return commit
     return None
+
+
+def removed_frozen(ctx: Context) -> list[str]:
+    """Packets closed on the baseline branch's tip whose closure.json the candidate no longer has."""
+    if ctx.baseline_ref is None or ctx.shallow:
+        return []
+    listing = git(ctx.root, "ls-tree", "-r", "--name-only", ctx.baseline_ref, "--", f"{CHANGES}/")
+    ids = [p.split("/")[1] for p in listing.splitlines() if p.endswith(f"/{CLOSURE}") and p.count("/") == 2]
+    return [cid for cid in ids if not (ctx.root / CHANGES / cid / CLOSURE).exists()]
 
 
 def check_closure(ctx, st: ChangeStatus, data, present, chain, approved_at):
@@ -1092,6 +1103,7 @@ def compute_status(ctx: Context, args) -> dict:
                 for r in errors
                 if r.code in integrity or (r.code.startswith("closure") and st.anchor)
             ]
+    failures += [f"{cid}: frozen packet removed from the candidate" for cid in removed_frozen(ctx)]
     failures += [r.message for r in surface if r.level == "error"]
     result["changes"] = [statuses[c].as_dict() for c in ids]
     result["surface"] = [r.as_dict() for r in surface]

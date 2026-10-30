@@ -1,0 +1,26 @@
+{
+  "schema": 1,
+  "id": "closure-integrity",
+  "kind": "repository",
+  "title": "Fail on removed frozen packets and allow reuse of deleted change ids",
+  "base": {
+    "ref": "main",
+    "commit": "4377e2e467b2523b09c89623883fa6d8643967f6"
+  },
+  "baseline": {},
+  "write_scope": [
+    "scripts/repo.py",
+    "scripts/tests/test_status.py",
+    "changes/README.md"
+  ],
+  "approvals": [
+    {
+      "artifact": "plan.md",
+      "sha256": "sha256:fd490c7d1d38226ec4c90751977747c98a03df5dadcc15028a5b95d8156be67b",
+      "by": "naelonambul",
+      "at": "2026-10-30T14:58:20Z",
+      "write_scope_sha256": "sha256:2c4998ef6745c59151eb13c8e0a9760c424f10dc9bfa864658c7f51fe164eb9f",
+      "note": "Owner approved in chat (\"\uc2b9\uc778\") after reviewing plan digest fd490c7d"
+    }
+  ]
+}
