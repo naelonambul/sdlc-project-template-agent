@@ -31,7 +31,7 @@ The root `intent.md` and `spec.md` are the durable product baseline. A new produ
 4. Ask an agent to interrogate the idea until the intent is concrete, then approve `intent.md` yourself: `python3 scripts/repo.py approve <id> intent.md --by <you>` records a digest-bound claim for exactly the bytes you reviewed. The agent commits and pushes it.
 5. Draft and approve `spec.md`, then the change's `plan.md`, in that order.
 6. Implement only when `python3 scripts/repo.py status --change <id>` reports `readiness=ready`.
-7. Run repository-native validation, review against `REVIEW.md`, merge the accepted intent and spec into the root, run `python3 scripts/repo.py close <id> --evidence <ref>`, and open a pull request with `Change-ID: <id>`.
+7. Verify, close and open a pull request as the Lifecycle section of `changes/README.md` describes, and review against `REVIEW.md`.
 
 See `.agents/skills/sdlc-artifacts/SKILL.md` for the workflow.
 
@@ -43,7 +43,7 @@ See `.agents/skills/sdlc-artifacts/SKILL.md` for the workflow.
 - `changes/`: one packet per change, with its own plan; `changes/README.md` defines the model.
 - `scripts/repo.py`: `status` computes change state and enforces gates; `verify` runs registered checks with routing and evidence; `new`, `approve` and `close` write packet records mechanically. Standard-library Python only.
 - `checks.json`: the check registry (exact argv, cwd, timeout, routed paths, required tools, group). `status` warns when product files are tracked but only the template's own check is registered.
-- `scripts/hooks/guard.py`: the agent-neutral in-session guard (deny file-tool edits to the root baseline, frozen packets, closures and approvals; ask before destructive git). `.claude/settings.json` is the thin Claude Code adapter; `status` checks that it points at tracked scripts.
+- `scripts/hooks/guard.py`: the agent-neutral in-session guard; see `scripts/hooks/README.md`. `.claude/settings.json` is the thin Claude Code adapter, and `status` checks that it points at tracked scripts.
 - `.agents/skills/`: on-demand shared agent procedures. `.claude/skills/` holds thin symlink adapters.
 - `docs/`: supporting, reference, and historical documentation only.
 - `.github/`: the `Change-ID` pull-request template and the `repository` CI workflow. See `docs/host-setup.md` for one-time GitHub settings.
@@ -57,7 +57,7 @@ The root baseline plus approved change packets are the SDLC authority. `docs/` m
 The repository enforces its rules in three layers, from hard to soft. Soft layers only make violations rare; the hard layer makes them visible.
 
 1. **Hard, after the fact:** `repo.py status` and `verify`, the control-plane tests, and the required `summary` check in CI. These decide. They do not depend on any agent having read anything.
-2. **In session:** `scripts/hooks/guard.py`, called from the agent's pre-edit and pre-command hooks. It denies the file-tool edits that no change should make by hand (root baseline, frozen packets, closures, approvals) and asks the human before destructive git or a shell write to `change.json`/`closure.json`. Shell writes to other protected files are not intercepted; layer 1 catches them. It is friction and an audit trail, not authentication.
+2. **In session:** `scripts/hooks/guard.py`, called from the agent's pre-edit and pre-command hooks, denies or asks as `scripts/hooks/README.md` lists. What it does not intercept, layer 1 catches. It is friction and an audit trail, not authentication.
 3. **Advisory:** `AGENTS.md`, the skills and `REVIEW.md`. `docs/agent-surfaces.md` records how to check that a harness still delivers them.
 
 ## Scope
@@ -68,12 +68,7 @@ The template covers Plan, Design, Build, Test and Deploy as a loop of committed 
 
 SDLC semantics belong to the repository, not to a specific agent interface. Features such as interrogation commands, plan modes, subagents, or agent-specific hooks are optional convenience layers.
 
-CLI and program installation are machine responsibilities. The repository stores the shared procedures as version-controlled skills:
-
-- `sdlc-artifacts`
-- `change-execution`
-- `verification-map`
-- `repository-quality`
+CLI and program installation are machine responsibilities. The repository stores the shared procedures as version-controlled skills in `.agents/skills/`.
 
 Optional tool unavailability must not silently change the SDLC gates.
 

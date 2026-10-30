@@ -1,0 +1,26 @@
+{
+  "schema": 1,
+  "id": "docs-dedupe",
+  "kind": "repository",
+  "title": "Keep one source for the close procedure and guard rules",
+  "base": {
+    "ref": "main",
+    "commit": "8991ee4cf816a232cb853effdff516c5486de239"
+  },
+  "baseline": {},
+  "write_scope": [
+    "README.md",
+    ".agents/skills/sdlc-artifacts/SKILL.md",
+    "docs/agent-surfaces.md"
+  ],
+  "approvals": [
+    {
+      "artifact": "plan.md",
+      "sha256": "sha256:dc542559b53ef2bc1c20640d9ba616a346f54175b63f0b3be2939cf2b966c2b2",
+      "by": "naelonambul",
+      "at": "2026-10-30T13:59:39Z",
+      "write_scope_sha256": "sha256:9a0b1ffcd5f63f1713a8f0739d3e0c28bac438af701f49c1e70d157f881ecbe6",
+      "note": "Owner approved in chat (\"\uc2b9\uc778\") after reviewing plan digest dc542559"
+    }
+  ]
+}
