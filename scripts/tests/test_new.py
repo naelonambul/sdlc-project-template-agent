@@ -223,7 +223,7 @@ class CarriedRootScopeTests(NewCase):
         proc = self.run_repo("verify", "--change", "init", "--full")
         self.assertEqual(proc.returncode, 0, proc.stdout + proc.stderr)
         ref = next(line.split(" ", 1)[1] for line in proc.stdout.splitlines() if line.startswith("evidence: "))
-        proc = self.run_repo("close", "init", "--evidence", os.path.relpath(ref, self.root.resolve()))
+        proc = self.run_repo("close", "init", "--evidence", ref)
         self.assertEqual(proc.returncode, 0, proc.stderr)
         result = self.status("--change", "init")
         self.assertEqual(result["by_id"]["init"]["closure"], "candidate")

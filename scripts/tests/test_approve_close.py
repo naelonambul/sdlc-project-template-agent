@@ -184,6 +184,50 @@ class Close(RepoCase):
             ref = self.verify_evidence("imp", checks=[{"id": "check", "status": status}])
             self.assertEvidenceRefused(status, ref)
 
+    def test_refuses_evidence_without_real_check_results(self):
+        self.ready_repository_change()
+        for checks in (None, [], ["bad"], [{"id": "check", "status": "not-run"}], [{"id": "check", "status": "invented"}]):
+            with self.subTest(checks=checks):
+                ref = self.verify_evidence("imp", checks=checks)
+                self.assertEvidenceRefused("check", ref)
+
+    def test_refuses_missing_or_not_applicable_registered_check(self):
+        self.write("checks.json", json.dumps({"schema": 1, "baseline_branch": "main", "checks": [{"id": "lint"}, {"id": "check"}]}))
+        self.ready_repository_change()
+        self.assertEvidenceRefused("lint", self.verify_evidence("imp"))
+        ref = self.verify_evidence("imp", checks=[{"id": "check", "status": "passed"}, {"id": "lint", "status": "not-applicable"}])
+        self.assertEvidenceRefused("lint", ref)
+
+    def test_refuses_evidence_older_than_the_files(self):
+        self.ready_repository_change()
+        self.write("src/a.txt", "good\n")
+        ref = self.verify_evidence("imp")
+        self.write("src/a.txt", "bad\n")
+        self.assertEvidenceRefused("files changed", ref)
+        self.write("src/a.txt", "good\n")
+        self.write("src/new.txt", "added\n")
+        self.assertEvidenceRefused("files changed", ref)
+
+    def test_refuses_evidence_without_a_tree_digest(self):
+        self.ready_repository_change()
+        head = self.git("rev-parse", "HEAD")
+        self.assertEvidenceRefused("files changed", self.verify_evidence("imp", source={"commit": head, "dirty": False}))
+
+    def test_absolute_reference_inside_the_root_becomes_relative(self):
+        self.ready_repository_change()
+        ref = self.verify_evidence("imp")
+        proc = self.run_repo("close", "imp", "--evidence", str(self.root.resolve() / ref))
+        self.assertEqual(proc.returncode, 0, proc.stderr)
+        self.assertTrue(json.loads(self.read("changes/imp/closure.json"))["evidence"][0].startswith(ref + " sha256:"))
+
+    def test_refuses_a_reference_outside_the_root(self):
+        self.ready_repository_change()
+        outside = self.root.parent / "outside.txt"
+        outside.write_text("x\n")
+        proc = self.run_repo("close", "imp", "--evidence", self.verify_evidence("imp"), "--evidence", str(outside))
+        self.assertEqual(proc.returncode, 1, proc.stdout)
+        self.assertIn("outside the repository", proc.stderr)
+
     def test_free_text_is_kept_beside_a_valid_run(self):
         self.ready_repository_change()
         ref = self.verify_evidence("imp")
@@ -193,7 +237,7 @@ class Close(RepoCase):
 
     def test_rewrite_refreshes_evidence_and_keeps_packet_digest(self):
         self.ready_repository_change()
-        run_1, run_2 = self.verify_evidence("imp", "run-1.json"), self.verify_evidence("imp", "run-2.json")
+        run_1, run_2 = self.verify_evidence("imp", ".evidence/1.json"), self.verify_evidence("imp", ".evidence/2.json")
         self.assertEqual(self.run_repo("close", "imp", "--evidence", run_1).returncode, 0)
         first = json.loads(self.read("changes/imp/closure.json"))
         proc = self.run_repo("close", "imp", "--evidence", run_2)

@@ -132,9 +132,13 @@ class RepoCase(unittest.TestCase):
         self.write(f"changes/{cid}/closure.json", json.dumps(data, indent=2) + "\n")
 
     def verify_evidence(self, cid, rel=".evidence/run/evidence.json", **override):
+        sys.path.insert(0, str(REPO_PY.parent))
+        import repo  # noqa: E402
+
+        tree = repo.candidate_digest(self.root, cid)
         data = {
             "schema": 1,
-            "source": {"commit": self.git("rev-parse", "HEAD"), "dirty": True},
+            "source": {"commit": self.git("rev-parse", "HEAD"), "dirty": True, "tree_sha256": tree},
             "change": cid,
             "complete": True,
             "checks": [{"id": "check", "status": "passed"}],
