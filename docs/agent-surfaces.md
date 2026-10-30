@@ -49,6 +49,8 @@ Codex reads `AGENTS.md` and discovers skills in `.agents/skills/` itself. No ada
 
 Codex also lists user-level and built-in skills alongside the repository's. Only the repository's skills are part of the contract.
 
+The `workspace-write` sandbox keeps `.git` read-only, so Codex cannot commit in a plain clone. Either make commits outside the sandbox, or keep the Git data outside the worktree, add that directory as a writable root and set `GIT_DIR` and `GIT_WORK_TREE`. The control-plane tests clear these variables, so their fixtures stay out of that data.
+
 ### Smoke-test results
 
 | Date | Surface | Setup | `AGENTS.md` delivered | Project skills discovered |
