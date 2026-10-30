@@ -1,11 +1,14 @@
 """Fixtures for `repo.py status`: identity, lifecycle, approval, scope, closure."""
 
+import contextlib
+import io
 import json
 import os
 import subprocess
+import sys
 import unittest
 
-from scripts.tests.support import RepoCase, digest
+from scripts.tests.support import REPO_PY, RepoCase, digest
 
 
 class ChangeIdentity(RepoCase):
@@ -177,6 +180,62 @@ class ScopeBinding(RepoCase):
         change = self.status()["by_id"]["imp"]
         self.assertEqual((change["closure"], change["freshness"]), ("frozen", "frozen"))
         self.assertNotIn("unbound-scope", self.codes(self.status(), "imp"))
+
+
+class TextOutput(RepoCase):
+    def frozen(self, *ids):
+        for cid in ids:
+            self.packet(cid, kind="repository")
+            self.approve(cid, "plan.md")
+            self.close(cid)
+        self.commit("close")
+
+    def text(self, *args):
+        return self.run_repo("status", *args)
+
+    def test_frozen_packets_fold_into_one_line(self):
+        self.frozen("alpha", "beta")
+        out = self.text().stdout
+        self.assertIn("frozen: 2\n", out)
+        self.assertNotIn("alpha", out)
+        self.assertNotIn("closure anchor", out)
+
+    def test_active_change_prints_in_full_when_frozen(self):
+        self.frozen("alpha", "beta")
+        out = self.text("--change", "alpha").stdout
+        self.assertIn("* alpha [repository]", out)
+        self.assertIn("closure anchor", out)
+        self.assertIn("frozen: 1\n", out)
+
+    def test_frozen_packet_with_a_reason_prints_in_full(self):
+        sys.path.insert(0, str(REPO_PY.parent))
+        import repo  # noqa: E402
+
+        change = {"id": "alpha", "kind": "repository", "stage": "closed", "freshness": "frozen", "approval": "unverified",
+                  "readiness": "ready", "closure": "frozen", "closure_anchor": "abc", "artifacts": {},
+                  "reasons": [{"level": "warn", "code": "x", "message": "look here"}]}
+        result = {"active": None, "identity_errors": [], "changes": [change], "surface": [], "changed_paths": [], "ok": True, "failures": []}
+        out = io.StringIO()
+        with contextlib.redirect_stdout(out):
+            repo.print_status(result)
+        self.assertIn("look here", out.getvalue())
+        self.assertNotIn("frozen:", out.getvalue())
+
+    def test_edited_frozen_packet_prints_in_full_and_fails(self):
+        self.frozen("alpha")
+        self.write("changes/alpha/plan.md", "# edited\n")
+        proc = self.text()
+        self.assertEqual(proc.returncode, 1)
+        self.assertIn("alpha [repository]", proc.stdout)
+        self.assertNotIn("frozen: ", proc.stdout)
+
+    def test_no_frozen_line_without_frozen_packets(self):
+        self.packet("alpha", kind="repository")
+        self.assertNotIn("frozen: ", self.text().stdout)
+
+    def test_json_lists_every_packet(self):
+        self.frozen("alpha", "beta")
+        self.assertEqual({c["id"] for c in self.status()["changes"]}, {"alpha", "beta"})
 
 
 class WriteScope(RepoCase):
