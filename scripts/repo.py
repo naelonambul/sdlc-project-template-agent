@@ -1199,6 +1199,10 @@ def new_packet_files(root: Path, args) -> dict[str, bytes]:
     head = git(root, "rev-parse", "--verify", "--quiet", "HEAD^{commit}", check=False)
     if not head:
         raise Refusal("the repository has no commit to use as the change base")
+    carried = sorted((required | ({"spec.md"} if args.with_spec else set())) - {"plan.md"})
+    for name in carried:
+        if roots.get(name) is None:
+            raise Refusal(f"root {name} does not exist")
     change = {
         "schema": SCHEMA,
         "id": cid,
@@ -1206,14 +1210,11 @@ def new_packet_files(root: Path, args) -> dict[str, bytes]:
         "title": args.title.strip(),
         "base": {"ref": baseline_branch(root), "commit": head.strip()},
         "baseline": baseline,
-        "write_scope": scope,
+        "write_scope": scope + [name for name in carried if name not in scope],
         "approvals": [],
     }
     files = {"change.json": (json.dumps(change, indent=2) + "\n").encode(), "plan.md": plan_skeleton(root)}
-    for name in sorted((required | ({"spec.md"} if args.with_spec else set())) - {"plan.md"}):
-        if roots.get(name) is None:
-            raise Refusal(f"root {name} does not exist")
-        files[name] = roots[name]
+    files.update({name: roots[name] for name in carried})
     return files
 
 

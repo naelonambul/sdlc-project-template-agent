@@ -63,6 +63,8 @@ Do not replace an existing valid toolchain with one of these examples merely bec
 
 Keep the generic `core` group dependent only on Python and Git. A check that needs a stack toolchain (Node, JDK, Xcode, …) gets its own group and its own CI job in `.github/workflows/repository.yml`, which installs that toolchain and runs `repo.py verify --group <group>`. Add the job to the summary's `needs`. `repo.py status` fails when groups and jobs disagree. Groups are execution and isolation units only: a group-filtered run reports other checks as `not-run` and its evidence as incomplete, so a group can never stand in for the full required set.
 
+The GitHub App cannot push `.github/workflows/**`, so a new group or CI job is an owner handoff. Stop and ask the owner to push the workflow change. Do not revert the group to silence `checks-unwired`. A check that needs only Python and Git can use `core`.
+
 Never model a gate that does not apply as a skipped CI job. `repo.py` decides `not-applicable` from routing and records the reason.
 
 ## Validate proportionally

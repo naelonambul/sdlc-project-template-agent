@@ -184,5 +184,51 @@ class RefusalTests(NewCase):
         self.assertRefused("product-init needs", "x", "--kind", "product-init", "--title", "t")
 
 
+class CarriedRootScopeTests(NewCase):
+    def test_product_init_scope_holds_both_roots(self):
+        self.assertEqual(self.new("init", "--kind", "product-init", "--title", "t", "--scope", "src/**").returncode, 0)
+        self.assertEqual(self.change("init")["write_scope"], ["src/**", "intent.md", "spec.md"])
+
+    def test_with_spec_scope_holds_spec_only(self):
+        self.establish_baseline()
+        self.assertEqual(self.new("x", "--kind", "incident", "--title", "t", "--with-spec").returncode, 0)
+        self.assertEqual(self.change("x")["write_scope"], ["spec.md"])
+
+    def test_repository_scope_gains_nothing(self):
+        self.assertEqual(self.new("x", "--kind", "repository", "--title", "t").returncode, 0)
+        self.assertEqual(self.change("x")["write_scope"], [])
+
+    def test_hand_passed_root_is_not_duplicated(self):
+        self.assertEqual(self.new("init", "--kind", "product-init", "--title", "t", "--scope", "spec.md").returncode, 0)
+        self.assertEqual(self.change("init")["write_scope"], ["spec.md", "intent.md"])
+
+    def test_quick_start_reaches_a_valid_candidate_closure(self):
+        check = {"id": "check", "group": "core", "argv": [sys.executable, "-c", "print('ok')"], "cwd": ".",
+                 "timeout_seconds": 30, "paths": ["**"], "requires": []}
+        self.write(".gitignore", ".evidence/\n")
+        self.write("checks.json", json.dumps({"schema": 1, "baseline_branch": "main", "checks": [check]}))
+        self.commit("checks")
+        self.git("switch", "-q", "-c", "change/init")
+        self.assertEqual(self.new("init", "--kind", "product-init", "--title", "t").returncode, 0)
+        self.write("changes/init/intent.md", "# Intent\nreal\n")
+        self.write("changes/init/spec.md", "# Spec\nreal\n")
+        self.write("changes/init/plan.md", "# Plan\nreal\n")
+        for name in ("intent.md", "spec.md", "plan.md"):
+            proc = self.run_repo("approve", "init", name, "--by", "owner")
+            self.assertEqual(proc.returncode, 0, proc.stderr)
+        self.commit("packet")
+        self.write("intent.md", self.read("changes/init/intent.md"))
+        self.write("spec.md", self.read("changes/init/spec.md"))
+        self.commit("baseline")
+        proc = self.run_repo("verify", "--change", "init", "--full")
+        self.assertEqual(proc.returncode, 0, proc.stdout + proc.stderr)
+        ref = next(line.split(" ", 1)[1] for line in proc.stdout.splitlines() if line.startswith("evidence: "))
+        proc = self.run_repo("close", "init", "--evidence", os.path.relpath(ref, self.root.resolve()))
+        self.assertEqual(proc.returncode, 0, proc.stderr)
+        result = self.status("--change", "init")
+        self.assertEqual(result["by_id"]["init"]["closure"], "candidate")
+        self.assertTrue(result["ok"], result["failures"])
+
+
 if __name__ == "__main__":
     unittest.main()
