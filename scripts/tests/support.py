@@ -131,6 +131,18 @@ class RepoCase(unittest.TestCase):
         }
         self.write(f"changes/{cid}/closure.json", json.dumps(data, indent=2) + "\n")
 
+    def verify_evidence(self, cid, rel=".evidence/run/evidence.json", **override):
+        data = {
+            "schema": 1,
+            "source": {"commit": self.git("rev-parse", "HEAD"), "dirty": True},
+            "change": cid,
+            "complete": True,
+            "checks": [{"id": "check", "status": "passed"}],
+            **override,
+        }
+        self.write(rel, json.dumps(data, indent=2) + "\n")
+        return rel
+
     # -- running repo.py -------------------------------------------------------
 
     def run_repo(self, *args, cwd=None):

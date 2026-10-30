@@ -1,0 +1,26 @@
+{
+  "schema": 1,
+  "id": "close-and-init-checks",
+  "kind": "repository",
+  "title": "Require real verify evidence in close and refuse placeholder product-init artifacts",
+  "base": {
+    "ref": "main",
+    "commit": "54f3e34b9b2b6b92f1a2fa0973302559815af1bf"
+  },
+  "baseline": {},
+  "write_scope": [
+    "scripts/repo.py",
+    "scripts/tests/",
+    "changes/README.md"
+  ],
+  "approvals": [
+    {
+      "artifact": "plan.md",
+      "sha256": "sha256:b8f73ff6c2a3bcc8c8578d62ef2b8bb87b3e7ddeed1ca39e505a43093e052649",
+      "by": "naelonambul",
+      "at": "2026-10-30T13:53:03Z",
+      "write_scope_sha256": "sha256:663d8efd655ac0200889ee3b0868c8ff5a73a46cf23ed70375a74e9acea63c94",
+      "note": "Owner approved in chat (\"\uc2b9\uc778\") after reviewing plan digest b8f73ff6"
+    }
+  ]
+}

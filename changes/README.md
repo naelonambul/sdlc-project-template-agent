@@ -85,7 +85,7 @@ The ordered path for every change, with what `python3 scripts/repo.py status --c
 
 Evidence rules:
 
-- **Cite only existing evidence.** A closure cites only evidence that exists when it is written, normally the local `verify` evidence from step 4. It never cites the CI run of its own pull request, which cannot exist yet.
+- **Cite only existing evidence.** A closure cites only evidence that exists when it is written, normally the local `verify` evidence from step 4. `close` refuses unless at least one reference is a `repo.py verify --change <id>` evidence file that is complete, has no `failed` or `blocked` check, and has HEAD as its `source.commit`. Other references may accompany it. It never cites the CI run of its own pull request, which cannot exist yet.
 - **CI results go in the pull request.** Record CI results in the pull request description or a comment, not in `closure.json`. The required `summary` check is the merge gate.
 - **Fixes after closure.** If CI or review needs another commit after the closure exists, that same commit:
   - re-runs local verification;
