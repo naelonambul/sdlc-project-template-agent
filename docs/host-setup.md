@@ -76,6 +76,8 @@ A GitHub App owned by the repository owner, with no webhook, installed on select
 - Contents: read and write; Pull requests: read and write; Metadata, Checks and Actions: read.
 - Not Administration, Workflows or Secrets. The App cannot change rulesets or settings, GitHub rejects its pushes that touch `.github/workflows/**`, so the owner makes workflow changes, and it cannot approve a pull request as the owner.
 
+Add each new repository to the App's installation before an agent starts work: **Settings → Applications → Installed GitHub Apps → the App → Configure → Repository access → Only select repositories → Select repositories → Save**. Only the owner can do this, and creating a repository from the template does not do it. Until then, minting a token for that repository fails, for example with HTTP 422, and the agent cannot push under its identity. If the token helper has its own repository allowlist, add the repository there too. Mint one token to confirm before starting.
+
 Keep the App's private key outside every repository, readable only by the owner, never in agent context. Mint short-lived installation tokens restricted to one repository; they expire after an hour and are never stored. Commit as `<app-slug>[bot]` with the email `<bot-user-id>+<app-slug>[bot]@users.noreply.github.com`. Never add the App as a ruleset bypass actor. The token helper is host-specific and lives outside the repository.
 
 ## Read-only host check

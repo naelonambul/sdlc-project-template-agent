@@ -1,0 +1,25 @@
+{
+  "schema": 1,
+  "id": "host-setup-app-install",
+  "kind": "repository",
+  "title": "Require adding each new repository to the GitHub App installation",
+  "base": {
+    "ref": "main",
+    "commit": "c45498597ac6349782dd7527877261753824e3b4"
+  },
+  "baseline": {},
+  "write_scope": [
+    "README.md",
+    "docs/host-setup.md"
+  ],
+  "approvals": [
+    {
+      "artifact": "plan.md",
+      "sha256": "sha256:2b172321497f0b1afa97e300331e369ad77f6393e3ecc278ab80cddd0d72f880",
+      "by": "naelonambul",
+      "at": "2026-10-30T14:21:41Z",
+      "write_scope_sha256": "sha256:b655833adffe43dabd99bcc4e10081a56e947da8252585f928917bffc54ef045",
+      "note": "Owner approved in chat (\"\uc2b9\uc778\") after reviewing plan digest 2b172321"
+    }
+  ]
+}
