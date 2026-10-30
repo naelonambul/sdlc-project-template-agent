@@ -1,0 +1,28 @@
+{
+  "schema": 1,
+  "id": "guard-remaining-gaps",
+  "kind": "repository",
+  "title": "Close the remaining guard gaps: shell flags, discarding git commands, inert commands, MCP edit tools",
+  "base": {
+    "ref": "main",
+    "commit": "36b2f18b3eaaff86887047d8bfcef0c95e821340"
+  },
+  "baseline": {},
+  "write_scope": [
+    "scripts/hooks/guard.py",
+    "scripts/hooks/README.md",
+    "scripts/tests/test_guard.py",
+    ".claude/settings.json",
+    "docs/agent-surfaces.md"
+  ],
+  "approvals": [
+    {
+      "artifact": "plan.md",
+      "sha256": "sha256:5440a4ca4a285a9045cd11354b931056154f24d6c06736d8d91ae12de84a4c06",
+      "by": "naelonambul",
+      "at": "2026-10-30T13:44:43Z",
+      "write_scope_sha256": "sha256:e12740249bad505721c025f201fea61a0a2dd305a2df60ecd4f2289156ea8ac3",
+      "note": "Owner approved in chat (\"\uc2b9\uc778, codex \ube0c\ub79c\uce58\ub294 \uc0ad\uc81c\ud574\uc918\") after reviewing plan digest 5440a4ca"
+    }
+  ]
+}

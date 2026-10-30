@@ -41,7 +41,7 @@ On checkouts where Git symlinks are disabled (for example Windows with `core.sym
 
 #### Hooks
 
-`.claude/settings.json` registers `scripts/hooks/guard.py claude` as a `PreToolUse` hook for `Edit|Write|MultiEdit` and `Bash`. The adapter holds no policy; `repo.py status` reports `hook-broken` when it points at an untracked script. The guard's exit code 2 blocks the tool call and feeds the reason back to the agent; an `ask` decision is returned as `permissionDecision: ask`, which prompts the human. Project settings apply only when the session's working directory is inside the project, and user or managed settings can change which hooks run, so a hook is never the enforcement boundary. To check the path on the real CLI, ask `claude -p` in a scratch copy to edit the root `intent.md` and to add an approval to a packet's `change.json`, and confirm both edits are denied with the guard's message (observed 2026-10-05, CLI 2.1.289).
+`.claude/settings.json` registers `scripts/hooks/guard.py claude` as a `PreToolUse` hook for `Edit|Write|MultiEdit`, MCP edit tools and `Bash`. The adapter holds no policy; `repo.py status` reports `hook-broken` when it points at an untracked script. The guard's exit code 2 blocks the tool call and feeds the reason back to the agent; an `ask` decision is returned as `permissionDecision: ask`, which prompts the human. Project settings apply only when the session's working directory is inside the project, and user or managed settings can change which hooks run, so a hook is never the enforcement boundary. To check the path on the real CLI, ask `claude -p` in a scratch copy to edit the root `intent.md` and to add an approval to a packet's `change.json`, and confirm both edits are denied with the guard's message (observed 2026-10-05, CLI 2.1.289).
 
 ### Codex
 
@@ -62,6 +62,7 @@ Codex also lists user-level and built-in skills alongside the repository's. Only
 | 2026-09-24 | Codex CLI 0.156.1 | `codex exec --sandbox read-only`, no adapters | yes | 7/7 (plus user-level and built-in skills) |
 | 2026-10-05 | Claude Code CLI 2.1.289 | no `CLAUDE.md`, adapters and `.claude/settings.json` hooks present; probes run non-interactively in a scratch copy | yes (no, with a shadowing `CLAUDE.md`) | 4/4 core skills checked; guard denied the root `intent.md` edit and the approval edit |
 | 2026-10-30 | Claude Code CLI 2.1.314 | no `CLAUDE.md`, adapters and `.claude/settings.json` hooks present; probes run non-interactively in a scratch copy | yes (no, with a shadowing `CLAUDE.md`) | 4/4 core skills; guard asked on commands placed after a comment line |
+| 2026-10-30 | Claude Code CLI 2.1.314 | hooks with the MCP edit matcher present; probes run non-interactively in a scratch copy | yes | 4/4 core skills; guard denied a live `Write` to root `intent.md`; MCP edit tools unit-tested only |
 
 The desktop app is **not verified**. Re-run the procedure below from a desktop session before claiming support. No other agent surface has been tested. Cursor is not a target.
 

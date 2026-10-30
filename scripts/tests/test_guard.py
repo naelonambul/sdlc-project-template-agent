@@ -272,6 +272,71 @@ class CommentHandlingTests(GuardCase):
             self.assertEqual(self.command(command)[1]["decision"], "allow", command)
 
 
+class CommandGapTests(GuardCase):
+    ASK = (
+        "bash -lc 'git reset --hard'",
+        "sh -ec 'git push --force origin main'",
+        "bash --login -c 'git reset --hard'",
+        "bash -o pipefail -c 'git reset --hard'",
+        "git branch --delete --force x",
+        "git branch -d -f x",
+        "git checkout -- .",
+        "git checkout .",
+        "git checkout main -- src/a.py",
+        "git restore .",
+        "git restore src/a.py",
+        "git restore --staged --worktree src/a.py",
+        "env git reset --hard",
+        "sudo git reset --hard",
+        "xargs git reset --hard",
+        "find . -exec git reset --hard ;",
+    )
+    ALLOW = (
+        "echo git reset --hard",
+        "printf 'git push --force'",
+        "git branch -d x",
+        "git checkout main",
+        "git checkout -b new",
+        "git restore --staged src/a.py",
+        "bash -lc 'ls'",
+        "bash script.sh -c x",
+    )
+
+    def test_ask_commands(self):
+        for text in self.ASK:
+            with self.subTest(command=text):
+                self.assertEqual(self.command(text)[1]["decision"], "ask")
+
+    def test_allow_commands(self):
+        for text in self.ALLOW:
+            with self.subTest(command=text):
+                self.assertEqual(self.command(text)[1]["decision"], "allow")
+
+
+class McpToolTests(GuardCase):
+    def mcp(self, tool="mcp__x__replace_content", **tool_input):
+        return self.claude({"tool_name": tool, "tool_input": tool_input, "cwd": str(self.root)})
+
+    def test_edit_of_protected_paths_denied(self):
+        for key, path in (("relative_path", "intent.md"), ("file_path", "changes/x/closure.json"), ("path", "spec.md")):
+            with self.subTest(path=path):
+                proc = self.mcp(**{key: path})
+                self.assertEqual(proc.returncode, 2)
+                self.assertTrue(proc.stderr)
+
+    def test_edit_of_change_json_denied_without_proposed_content(self):
+        self.packet("x")
+        self.assertEqual(self.mcp(relative_path="changes/x/change.json").returncode, 2)
+
+    def test_ordinary_path_no_path_and_outside_path_allowed(self):
+        self.assertEqual(self.mcp(relative_path="src/a.py").returncode, 0)
+        self.assertEqual(self.mcp(pattern="x").returncode, 0)
+        self.assertEqual(self.mcp(file_path="/tmp/outside.txt").returncode, 0)
+
+    def test_read_only_tool_allowed_on_protected_path(self):
+        self.assertEqual(self.mcp("mcp__x__find_symbol", relative_path="intent.md").returncode, 0)
+
+
 class ClaudeAdapterTests(GuardCase):
     def test_edit_root_intent_denied_with_stderr(self):
         proc = self.claude(
@@ -384,7 +449,8 @@ class SettingsAdapterTests(unittest.TestCase):
         self.assertTrue(commands)
         for command in commands:
             self.assertTrue(command.endswith("scripts/hooks/guard.py claude"), command)
-        self.assertEqual({e["matcher"] for e in data["hooks"]["PreToolUse"]}, {"Edit|Write|MultiEdit", "Bash"})
+        matchers = {e["matcher"] for e in data["hooks"]["PreToolUse"]}
+        self.assertEqual(matchers, {"Edit|Write|MultiEdit", "Bash", "mcp__.*(write|edit|replace|insert|create|delete|rename).*"})
 
     def test_guard_is_executable_python(self):
         self.assertTrue(os.access(GUARD, os.X_OK))
