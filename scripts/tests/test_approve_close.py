@@ -2,7 +2,7 @@
 
 import json
 
-from scripts.tests.support import RepoCase, digest
+from scripts.tests.support import UNESTABLISHED, RepoCase, digest
 
 
 class Approve(RepoCase):
@@ -82,6 +82,20 @@ class Approve(RepoCase):
         self.assertIn("already has a closure", proc.stderr)
 
 
+class PlaceholderProductInit(RepoCase):
+    def test_refuses_artifacts_that_keep_the_marker(self):
+        self.packet("init", kind="product-init", artifacts={"intent.md": UNESTABLISHED + "# I\n", "spec.md": "# S\n", "plan.md": "# P\n"})
+        proc = self.run_repo("approve", "init", "intent.md", "--by", "owner")
+        self.assertEqual(proc.returncode, 1)
+        self.assertIn("unestablished marker", proc.stderr)
+        self.write("changes/init/intent.md", "# I\n")
+        self.assertEqual(self.run_repo("approve", "init", "intent.md", "--by", "owner").returncode, 0)
+        self.write("changes/init/spec.md", UNESTABLISHED + "# S\n")
+        proc = self.run_repo("approve", "init", "spec.md", "--by", "owner")
+        self.assertEqual(proc.returncode, 1)
+        self.assertIn("unestablished marker", proc.stderr)
+
+
 class Close(RepoCase):
     def ready_repository_change(self):
         self.packet("imp", kind="repository", scope=["src/**"])
@@ -91,9 +105,9 @@ class Close(RepoCase):
     def test_writes_candidate_closure(self):
         self.write(".gitignore", ".evidence/\n")
         self.ready_repository_change()
-        evidence_text = "{}\n"
-        self.write(".evidence/run/evidence.json", evidence_text)
-        proc = self.run_repo("close", "imp", "--evidence", ".evidence/run/evidence.json", "--evidence", "review: none needed")
+        ref = self.verify_evidence("imp")
+        evidence_text = self.read(ref)
+        proc = self.run_repo("close", "imp", "--evidence", ref, "--evidence", "review: none needed")
         self.assertEqual(proc.returncode, 0, proc.stderr)
         closure = json.loads(self.read("changes/imp/closure.json"))
         self.assertEqual(closure["baseline"], {})
@@ -124,7 +138,7 @@ class Close(RepoCase):
         self.assertEqual(proc.returncode, 1)
         self.assertIn("cp changes/beh/spec.md spec.md", proc.stderr)
         self.write("spec.md", "# Spec\nv2\n")
-        proc = self.run_repo("close", "beh", "--evidence", "local verify")
+        proc = self.run_repo("close", "beh", "--evidence", self.verify_evidence("beh"))
         self.assertEqual(proc.returncode, 0, proc.stderr)
         closure = json.loads(self.read("changes/beh/closure.json"))
         self.assertEqual(closure["baseline"], {"spec.md": digest("# Spec\nv2\n")})
@@ -139,11 +153,50 @@ class Close(RepoCase):
         self.assertEqual(self.read("changes/init/closure.json"), before)
         self.assertEqual(self.status()["by_id"]["init"]["closure"], "frozen")
 
+    def assertEvidenceRefused(self, fragment, ref):
+        proc = self.run_repo("close", "imp", "--evidence", ref)
+        self.assertEqual(proc.returncode, 1, proc.stdout)
+        self.assertIn(fragment, proc.stderr)
+        self.assertFalse((self.root / "changes/imp/closure.json").exists())
+
+    def test_refuses_free_text_and_missing_evidence_files(self):
+        self.ready_repository_change()
+        self.assertEvidenceRefused("repo.py verify", "made-up-ref")
+        self.assertEvidenceRefused("repo.py verify", ".evidence/none/evidence.json")
+
+    def test_refuses_evidence_that_is_not_a_json_object(self):
+        self.ready_repository_change()
+        self.write(".evidence/a.json", "not json\n")
+        self.assertEvidenceRefused("not JSON", ".evidence/a.json")
+        self.write(".evidence/b.json", "[]\n")
+        self.assertEvidenceRefused("not JSON", ".evidence/b.json")
+
+    def test_refuses_evidence_of_another_change_or_commit(self):
+        self.ready_repository_change()
+        self.assertEvidenceRefused("verify --change imp", self.verify_evidence("other"))
+        self.assertEvidenceRefused("verify --change imp", self.verify_evidence(None))
+        self.assertEvidenceRefused("not HEAD", self.verify_evidence("imp", source={"commit": "0" * 40, "dirty": False}))
+
+    def test_refuses_incomplete_or_failing_evidence(self):
+        self.ready_repository_change()
+        self.assertEvidenceRefused("incomplete", self.verify_evidence("imp", complete=False))
+        for status in ("failed", "blocked"):
+            ref = self.verify_evidence("imp", checks=[{"id": "check", "status": status}])
+            self.assertEvidenceRefused(status, ref)
+
+    def test_free_text_is_kept_beside_a_valid_run(self):
+        self.ready_repository_change()
+        ref = self.verify_evidence("imp")
+        proc = self.run_repo("close", "imp", "--evidence", "ci link", "--evidence", ref)
+        self.assertEqual(proc.returncode, 0, proc.stderr)
+        self.assertEqual(json.loads(self.read("changes/imp/closure.json"))["evidence"][0], "ci link")
+
     def test_rewrite_refreshes_evidence_and_keeps_packet_digest(self):
         self.ready_repository_change()
-        self.assertEqual(self.run_repo("close", "imp", "--evidence", "run 1").returncode, 0)
+        run_1, run_2 = self.verify_evidence("imp", "run-1.json"), self.verify_evidence("imp", "run-2.json")
+        self.assertEqual(self.run_repo("close", "imp", "--evidence", run_1).returncode, 0)
         first = json.loads(self.read("changes/imp/closure.json"))
-        proc = self.run_repo("close", "imp", "--evidence", "run 2")
+        proc = self.run_repo("close", "imp", "--evidence", run_2)
         self.assertIn("rewrote", proc.stdout)
         second = json.loads(self.read("changes/imp/closure.json"))
-        self.assertEqual((first["packet_sha256"], second["evidence"]), (second["packet_sha256"], ["run 2"]))
+        self.assertEqual((first["packet_sha256"], second["evidence"]), (second["packet_sha256"], [f"{run_2} {digest(self.read(run_2))}"]))

@@ -8,7 +8,7 @@ import subprocess
 import sys
 import unittest
 
-from scripts.tests.support import REPO_PY, RepoCase, digest
+from scripts.tests.support import REPO_PY, UNESTABLISHED, RepoCase, digest
 
 
 class ChangeIdentity(RepoCase):
@@ -236,6 +236,33 @@ class TextOutput(RepoCase):
     def test_json_lists_every_packet(self):
         self.frozen("alpha", "beta")
         self.assertEqual({c["id"] for c in self.status()["changes"]}, {"alpha", "beta"})
+
+
+class PlaceholderArtifacts(RepoCase):
+    def marked(self):
+        marked = {"intent.md": UNESTABLISHED + "# Intent\n", "spec.md": UNESTABLISHED + "# Specification\n", "plan.md": "# P\n"}
+        self.packet("init", kind="product-init", artifacts=marked)
+        self.approve("init", "intent.md", "spec.md", "plan.md")
+
+    def test_hand_written_claim_on_a_marked_artifact_blocks(self):
+        self.marked()
+        result = self.status("--change", "init")
+        self.assertIn("placeholder-artifact", self.codes(result, "init"))
+        self.assertEqual(result["by_id"]["init"]["readiness"], "blocked")
+
+    def test_frozen_packet_with_the_marker_stays_frozen(self):
+        self.marked()
+        self.close("init")
+        self.commit("close init")
+        result = self.status()
+        self.assertEqual(result["by_id"]["init"]["closure"], "frozen")
+        self.assertNotIn("placeholder-artifact", self.codes(result, "init"))
+
+    def test_other_kinds_are_unaffected(self):
+        self.establish_baseline()
+        self.packet("arch", kind="architecture", artifacts={"spec.md": UNESTABLISHED + "# S\n", "plan.md": "# P\n"})
+        self.approve("arch", "spec.md", "plan.md")
+        self.assertNotIn("placeholder-artifact", self.codes(self.status("--change", "arch"), "arch"))
 
 
 class WriteScope(RepoCase):

@@ -303,6 +303,11 @@ def scope_digest(scope: list) -> str:
     return sha256_bytes(json.dumps(sorted(scope), separators=(",", ":")).encode())
 
 
+def is_placeholder(kind: str, packet_dir: Path, artifact: str) -> bool:
+    """A product-init copy of a root artifact that was never drafted."""
+    return kind == "product-init" and artifact in BASELINE and UNESTABLISHED.encode() in (packet_dir / artifact).read_bytes()
+
+
 def check_approvals(st: ChangeStatus, data: dict, packet_dir: Path, chain: list) -> tuple[dict, bool, bool]:
     """Return (approval time by current artifact, any stale claim, plan claim without a scope binding)."""
     approved_at = {}
@@ -403,6 +408,9 @@ def evaluate_change(ctx: Context, change_id: str) -> ChangeStatus:
     if (packet_dir / CLOSURE).exists():
         st.stage = "closed"
         check_closure(ctx, st, data, present, chain, approved_at)
+    placeholders = [n for n in approved_at if is_placeholder(st.kind, packet_dir, n)]
+    if placeholders and st.closure != "frozen":
+        st.add("error", "placeholder-artifact", f"approved {placeholders} still carry the unestablished marker")
     # A frozen change was approved before scope binding existed, or verified with it at its anchor.
     if unbound_scope and st.closure != "frozen":
         st.add("error", "unbound-scope", f"the {PLAN} approval does not bind write_scope; the owner re-runs repo.py approve {change_id} {PLAN}")
@@ -1278,6 +1286,8 @@ def approval_claim(root: Path, args) -> tuple[Path, dict, dict]:
         raise Refusal(f"{artifact} is not in the chain of a {st.kind!r} change ({', '.join(st.artifacts)})")
     if not (packet_dir / artifact).is_file():
         raise Refusal(f"{CHANGES}/{cid}/{artifact} does not exist yet; draft it first")
+    if is_placeholder(st.kind, packet_dir, artifact):
+        raise Refusal(f"{CHANGES}/{cid}/{artifact} still carries the unestablished marker; draft it and remove the marker first")
     if st.closure != "none" or (packet_dir / CLOSURE).exists():
         raise Refusal("the change already has a closure; record follow-up work as a new change")
     chain = list(st.artifacts)
@@ -1310,6 +1320,42 @@ def cmd_approve(args) -> int:
     return 0
 
 
+def evidence_problem(data, cid: str, head: str) -> str | None:
+    """Why a parsed evidence file is not a passing verify run of this change at HEAD."""
+    if not isinstance(data, dict):
+        return "not JSON evidence"
+    if data.get("change") != cid:
+        return f"it was not produced by repo.py verify --change {cid}"
+    if data.get("complete") is not True:
+        return "the verify run is incomplete"
+    bad = [c.get("id") for c in data.get("checks", []) if not isinstance(c, dict) or c.get("status") in ("failed", "blocked")]
+    if bad:
+        return f"checks failed or blocked: {bad}"
+    source = data.get("source")
+    if not isinstance(source, dict) or source.get("commit") != head:
+        return "its source commit is not HEAD; verify again"
+    return None
+
+
+def check_verify_evidence(root: Path, cid: str, refs: list[str]) -> None:
+    """At least one reference must be a passing verify run of this change at HEAD."""
+    head = git(root, "rev-parse", "HEAD").strip()
+    problems = []
+    for ref in refs:
+        path = root / ref
+        if not path.is_file():
+            problems.append(f"{ref}: not an existing file")
+            continue
+        try:
+            problem = evidence_problem(json.loads(path.read_text()), cid, head)
+        except (OSError, ValueError):
+            problem = "not JSON evidence"
+        if problem is None:
+            return
+        problems.append(f"{ref}: {problem}")
+    raise Refusal(f"--evidence must cite a passing repo.py verify run of this change: {problems[0]}")
+
+
 def closure_record(root: Path, args) -> tuple[Path, dict]:
     """Validate a `close` request; return (closure.json path, its content)."""
     cid = args.id
@@ -1335,9 +1381,10 @@ def closure_record(root: Path, args) -> tuple[Path, dict]:
         if root_digest != local:
             raise Refusal(f"accepted {name} has not been merged into the root: cp {CHANGES}/{cid}/{name} {name}")
         baseline[name] = root_digest
+    check_verify_evidence(root, cid, evidence)
     refs = []
     for ref in evidence:
-        candidate = (root / ref) if not Path(ref).is_absolute() else Path(ref)
+        candidate = root / ref  # an absolute ref replaces root
         refs.append(f"{ref} {file_digest(candidate)}" if candidate.is_file() else ref)
     closure = {
         "schema": SCHEMA,
