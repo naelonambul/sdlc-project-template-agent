@@ -6,6 +6,10 @@
         "hooks": [{"type": "command", "command": "python3 \"$CLAUDE_PROJECT_DIR\"/scripts/hooks/guard.py claude"}]
       },
       {
+        "matcher": "mcp__.*(write|edit|replace|insert|create|delete|rename).*",
+        "hooks": [{"type": "command", "command": "python3 \"$CLAUDE_PROJECT_DIR\"/scripts/hooks/guard.py claude"}]
+      },
+      {
         "matcher": "Bash",
         "hooks": [{"type": "command", "command": "python3 \"$CLAUDE_PROJECT_DIR\"/scripts/hooks/guard.py claude"}]
       }

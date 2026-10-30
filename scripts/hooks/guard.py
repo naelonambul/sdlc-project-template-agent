@@ -140,6 +140,9 @@ def decide_path(root: Path, path: str, proposed: str | None) -> tuple[str, str]:
 PACKET_FILE = re.compile(r"(?:^|/)(?:change|closure)\.json$")
 APPROVE = re.compile(r"repo\.py\s+approve\b")
 SHELLS = {"sh", "bash", "zsh", "dash", "ksh"}
+INERT_COMMANDS = {"echo", "printf"}
+MCP_EDIT_TOOL = re.compile(r"mcp__.*(write|edit|replace|insert|create|delete|rename)")
+MCP_PATH_KEYS = ("relative_path", "file_path", "path")
 
 
 def strip_shell_comments(command: str) -> str:
@@ -234,6 +237,8 @@ def packet_write(tokens: list[str]) -> bool:
 
 def git_invocation(segment: list[str]) -> tuple[str, list[str]] | None:
     """Return (subcommand, arguments) when the segment runs git."""
+    if posixpath.basename(segment[0]) in INERT_COMMANDS:
+        return None
     for i, token in enumerate(segment):
         if posixpath.basename(token) != "git":
             continue
@@ -266,14 +271,36 @@ def git_rule(sub: str, args: list[str]) -> str | None:
         return "reset-hard"
     elif sub == "clean" and ("--force" in args or "f" in flags):
         return "clean-force"
-    elif sub == "branch" and "D" in flags:
+    elif sub == "branch" and (
+        "D" in flags or (("--delete" in args or "d" in flags) and ("--force" in args or "f" in flags))
+    ):
         return "branch-delete"
+    elif sub == "checkout" and ("--" in args or "." in args):
+        return "checkout-discard"
+    elif sub == "restore" and ("--worktree" in args or "W" in flags or not ("--staged" in args or "S" in flags)):
+        return "restore-discard"
     elif sub == "rebase":
         return "rebase"
     elif sub == "commit" and "--amend" in args:
         return "commit-amend"
     elif sub == "filter-branch":
         return "filter-branch"
+    return None
+
+
+def shell_script(segment: list[str]) -> str | None:
+    """The script a shell runs through a -c style flag, such as -c, -lc or -ec."""
+    args = iter(segment[1:])
+    for token in args:
+        if token in ("-o", "-O", "+o", "+O"):
+            next(args, None)
+        elif token.startswith("--"):
+            continue
+        elif token.startswith("-") and len(token) > 1:
+            if "c" in token:
+                return next(args, None)
+        else:
+            return None
     return None
 
 
@@ -292,10 +319,10 @@ def decide_command(command: str, depth: int = 0) -> tuple[str, str]:
         return decision(ASK, "packet-write: shell write to change.json or closure.json; the human confirms")
     if depth < 3:
         for segment in segments:
-            if posixpath.basename(segment[0]) in SHELLS and "-c" in segment:
-                script = segment[segment.index("-c") + 1 :]
+            if posixpath.basename(segment[0]) in SHELLS:
+                script = shell_script(segment)
                 if script:
-                    nested = decide_command(script[0], depth + 1)
+                    nested = decide_command(script, depth + 1)
                     if nested[0] != ALLOW:
                         return nested
     return decision(ALLOW)
@@ -322,7 +349,8 @@ def read_current(root: Path, file_path: str) -> str | None:
 def claude_decision(payload: dict) -> tuple[str, str]:
     tool = payload.get("tool_name")
     tool_input = payload.get("tool_input")
-    if tool not in ("Edit", "Write", "MultiEdit", "Bash") or not isinstance(tool_input, dict):
+    mcp_edit = isinstance(tool, str) and MCP_EDIT_TOOL.match(tool) is not None
+    if not (mcp_edit or tool in ("Edit", "Write", "MultiEdit", "Bash")) or not isinstance(tool_input, dict):
         return decision(ALLOW)
     cwd = payload.get("cwd") if isinstance(payload.get("cwd"), str) and payload.get("cwd") else os.getcwd()
     root = find_root(cwd)
@@ -333,6 +361,10 @@ def claude_decision(payload: dict) -> tuple[str, str]:
     if tool == "Bash":
         command = tool_input.get("command")
         return decide_command(command) if isinstance(command, str) else decision(ALLOW)
+    if mcp_edit:
+        # The proposed content is unknown here, so change.json is denied outright.
+        paths = [tool_input[k] for k in MCP_PATH_KEYS if isinstance(tool_input.get(k), str) and tool_input[k]]
+        return decide_path(root, paths[0], None) if paths else decision(ALLOW)
 
     file_path = tool_input.get("file_path")
     if not isinstance(file_path, str) or not file_path:
