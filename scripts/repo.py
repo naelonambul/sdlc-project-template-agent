@@ -1075,6 +1075,18 @@ def read_pr_body(args) -> str | None:
     return Path(args.pr_body).read_text() if args.pr_body != "-" else sys.stdin.read()
 
 
+def pull_request_failures(st: ChangeStatus, paths: list[str]) -> list[str]:
+    """The final gate: a pull request carries one finished change."""
+    failures = []
+    if st.closure != "candidate":
+        failures.append(f"{st.id}: pull request needs a candidate closure (closure={st.closure})")
+    others = {p.split("/")[1] for p in paths if p.startswith(f"{CHANGES}/") and p.count("/") >= 2}
+    others -= {st.id, TEMPLATE_PACKET}
+    if others:
+        failures.append(f"{st.id}: pull request touches other packets: {sorted(others)}")
+    return failures
+
+
 def compute_status(ctx: Context, args) -> dict:
     ids = change_ids(ctx.root)
     active = resolve_active(ctx, args.change, read_pr_body(args), args.branch, ids)
@@ -1104,6 +1116,8 @@ def compute_status(ctx: Context, args) -> dict:
                 if r.code in integrity or (r.code.startswith("closure") and st.anchor)
             ]
     failures += [f"{cid}: frozen packet removed from the candidate" for cid in removed_frozen(ctx)]
+    if args.pr_body is not None and active.id in statuses:
+        failures += pull_request_failures(statuses[active.id], result["changed_paths"])
     failures += [r.message for r in surface if r.level == "error"]
     result["changes"] = [statuses[c].as_dict() for c in ids]
     result["surface"] = [r.as_dict() for r in surface]

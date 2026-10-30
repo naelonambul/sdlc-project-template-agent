@@ -592,5 +592,60 @@ class CheckWiring(RepoCase):
         self.assertFailed(self.status(), "never a shell string")
 
 
+class PullRequestGate(RepoCase):
+    def setUp(self):
+        super().setUp()
+        self.git("switch", "-q", "-c", "change/alpha")
+        self.packet("alpha", kind="repository", scope=["src/**", "changes/**"])
+
+    def pr(self):
+        body = self.root.parent / "body.md"
+        body.write_text("Change-ID: alpha\n")
+        return self.status("--branch=", "--pr-body", str(body), "--base", "main", "--head", "HEAD")
+
+    def ready(self):
+        self.approve("alpha", "plan.md")
+
+    def test_unapproved_packet_fails(self):
+        self.commit("draft")
+        self.assertFailed(self.pr(), "needs a candidate closure")
+        self.assertTrue(self.status("--change", "alpha")["ok"], "local drafting stays allowed")
+
+    def test_approved_packet_without_closure_fails(self):
+        self.ready()
+        self.commit("approved")
+        self.assertFailed(self.pr(), "needs a candidate closure")
+        self.assertTrue(self.status("--change", "alpha")["ok"], "local work stays allowed")
+
+    def test_invalid_closure_fails(self):
+        self.ready()
+        self.close("alpha", packet_sha256="sha256:" + "0" * 64)
+        self.commit("closed")
+        self.assertFailed(self.pr(), "needs a candidate closure")
+
+    def test_candidate_closure_passes(self):
+        self.ready()
+        self.close("alpha")
+        self.commit("closed")
+        result = self.pr()
+        self.assertTrue(result["ok"], result["failures"])
+
+    def test_second_packet_fails(self):
+        self.ready()
+        self.packet("beta", kind="repository")
+        self.close("alpha")
+        self.commit("two packets")
+        self.assertFailed(self.pr(), "touches other packets: ['beta']")
+
+    def test_template_packet_edit_passes(self):
+        self.write("changes/_template/plan.md", "# Plan\n")
+        self.commit("template")
+        self.ready()
+        self.close("alpha")
+        self.commit("closed")
+        result = self.pr()
+        self.assertTrue(result["ok"], result["failures"])
+
+
 if __name__ == "__main__":
     unittest.main()

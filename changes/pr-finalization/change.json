@@ -1,0 +1,26 @@
+{
+  "schema": 1,
+  "id": "pr-finalization",
+  "kind": "repository",
+  "title": "Require a candidate closure and a single packet in a pull request",
+  "base": {
+    "ref": "main",
+    "commit": "50d396a3b7b6dc7cce15315218f9d3ae5dd6fada"
+  },
+  "baseline": {},
+  "write_scope": [
+    "scripts/repo.py",
+    "scripts/tests/test_status.py",
+    "changes/README.md"
+  ],
+  "approvals": [
+    {
+      "artifact": "plan.md",
+      "sha256": "sha256:33b1ea2d4dce73262199522bccc7e758a4fd112c17d263550d32ae776094c50b",
+      "by": "naelonambul",
+      "at": "2026-10-30T15:03:58Z",
+      "write_scope_sha256": "sha256:2c4998ef6745c59151eb13c8e0a9760c424f10dc9bfa864658c7f51fe164eb9f",
+      "note": "Owner approved in chat (\"\uc2b9\uc778\") after reviewing plan digest 33b1ea2d"
+    }
+  ]
+}
