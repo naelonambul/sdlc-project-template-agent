@@ -235,6 +235,60 @@ class SmallGates(RepoCase):
         self.assertFailed(self.status(), "check group 'web' has no")
 
 
+class CarriedBaseline(RepoCase):
+    def carried(self):
+        self.establish_baseline()
+        self.git("switch", "-q", "-c", "change/beh")
+        self.packet("beh", kind="behavior", scope=["spec.md"], artifacts={"spec.md": "# Spec\nnew\n", "plan.md": "# P\n"})
+        self.approve("beh", "spec.md", "plan.md")
+        self.commit("packet")
+
+    def test_a_moved_baseline_is_stale_after_the_copy_to_the_root(self):
+        self.carried()
+        self.git("switch", "-q", "main")
+        self.write("spec.md", "# Spec\nother change\n")
+        self.commit("main moved")
+        self.git("switch", "-q", "change/beh")
+        self.write("spec.md", "# Spec\nnew\n")
+        self.assertIn("stale-baseline", self.codes(self.status("--change", "beh"), "beh"))
+
+    def test_the_copy_to_the_root_is_not_stale(self):
+        self.carried()
+        self.write("spec.md", "# Spec\nnew\n")
+        self.assertNotIn("stale-baseline", self.codes(self.status("--change", "beh"), "beh"))
+
+    def test_a_product_init_copied_to_the_root_is_not_established_already(self):
+        self.git("switch", "-q", "-c", "change/init")
+        self.packet("init", kind="product-init", artifacts={"intent.md": "# I\n", "spec.md": "# S\n", "plan.md": "# P\n"})
+        self.approve("init", "intent.md", "spec.md", "plan.md")
+        self.write("intent.md", "# I\n")
+        self.write("spec.md", "# S\n")
+        self.assertNotIn("baseline-established", self.codes(self.status("--change", "init"), "init"))
+
+
+class ClosureAndReadiness(RepoCase):
+    def closed(self):
+        self.establish_baseline()
+        self.git("switch", "-q", "-c", "change/imp")
+        self.packet("imp", kind="repository", scope=["src/**"])
+        self.approve("imp", "plan.md")
+        self.write("src/a.txt", "x\n")
+        self.close("imp")
+        self.commit("close imp")
+
+    def test_an_out_of_date_closure_fails_status_but_not_readiness(self):
+        self.closed()
+        self.write("src/a.txt", "y\n")
+        result = self.status("--change", "imp")
+        self.assertEqual(result["by_id"]["imp"]["readiness"], "ready")
+        self.assertEqual(result["exit"], 1)
+
+    def test_a_stale_approval_with_a_closure_stays_blocked(self):
+        self.closed()
+        self.write("changes/imp/plan.md", "# Plan v2\n")
+        self.assertEqual(self.status("--change", "imp")["by_id"]["imp"]["readiness"], "blocked")
+
+
 class ScopeBinding(RepoCase):
     def approved(self):
         self.packet("imp", kind="repository", scope=["src/**", "docs/**"])

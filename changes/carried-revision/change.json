@@ -1,0 +1,27 @@
+{
+  "schema": 1,
+  "id": "carried-revision",
+  "kind": "repository",
+  "title": "Let a closed change revise a carried artifact without a false block",
+  "base": {
+    "ref": "main",
+    "commit": "184b5ef46c37e215f226ceb5db9001cb98a671d3"
+  },
+  "baseline": {},
+  "write_scope": [
+    "scripts/repo.py",
+    "scripts/tests/test_approve_close.py",
+    "scripts/tests/test_status.py",
+    "changes/README.md"
+  ],
+  "approvals": [
+    {
+      "artifact": "plan.md",
+      "sha256": "sha256:51ece38c1760289a4eda6e82fdb195b033bf761a0982f4a78c0b54878657eda0",
+      "by": "naelonambul",
+      "at": "2026-10-31T02:22:38Z",
+      "write_scope_sha256": "sha256:5108f0cfd688c4d7001988355cbbdca947aca84a552ac9c533438155e2946883",
+      "note": "Owner approved in chat (\"\uc218\uc815\uc548 \uc2b9\uc778\") after reviewing digest 51ece38c"
+    }
+  ]
+}
