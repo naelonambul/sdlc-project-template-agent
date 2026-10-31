@@ -147,6 +147,41 @@ class Approval(RepoCase):
         self.assertFailed(result, "bound to different bytes")
 
 
+class Revision(RepoCase):
+    def implementing(self):
+        self.git("switch", "-q", "-c", "change/imp")
+        self.packet("imp", kind="repository", scope=["src/**"])
+        self.commit("packet")
+        self.write("src/a.txt", "x\n")
+
+    def test_a_stale_plan_does_not_report_the_work_as_premature(self):
+        self.implementing()
+        self.approve("imp", "plan.md")
+        self.write("changes/imp/plan.md", "# Plan v2\n")
+        result = self.status("--change", "imp")
+        self.assertEqual(result["exit"], 1)
+        self.assertIn("stale-approval", self.codes(result, "imp"))
+        self.assertEqual(result["by_id"]["imp"]["readiness"], "blocked")
+        self.assertNotIn("not-ready", self.codes(result, "imp"))
+        self.assertNotIn("awaiting-approval", self.codes(result, "imp"))
+
+    def test_a_never_approved_plan_still_reports_premature_work(self):
+        self.implementing()
+        self.assertIn("not-ready", self.codes(self.status("--change", "imp"), "imp"))
+
+    def test_a_reapproved_spec_blocks_until_the_plan_follows(self):
+        self.establish_baseline()
+        self.packet("beh", kind="behavior", artifacts={"spec.md": "# Spec\nnew\n", "plan.md": "# P\n"})
+        self.approve("beh", "spec.md", "plan.md")
+        self.write("changes/beh/spec.md", "# Spec\nnewer\n")
+        self.assertEqual(self.run_repo("approve", "beh", "spec.md", "--by", "owner").returncode, 0)
+        result = self.status("--change", "beh")
+        self.assertIn("out-of-order", self.codes(result, "beh"))
+        self.assertTrue(any("re-approve" in f for f in result["failures"]), result["failures"])
+        self.assertEqual(self.run_repo("approve", "beh", "plan.md", "--by", "owner").returncode, 0)
+        self.assertNotIn("out-of-order", self.codes(self.status("--change", "beh"), "beh"))
+
+
 class ScopeBinding(RepoCase):
     def approved(self):
         self.packet("imp", kind="repository", scope=["src/**", "docs/**"])
