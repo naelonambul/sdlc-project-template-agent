@@ -85,14 +85,9 @@ The ordered path for every change, with what `python3 scripts/repo.py status --c
 
 Evidence rules:
 
-- **Cite only existing evidence.** A closure cites only evidence that exists when it is written, normally the local `verify` evidence from step 4. `close` refuses unless at least one reference is a `repo.py verify --change <id>` evidence file from a full run: complete, every check in `checks.json` `passed`, HEAD as its `source.commit`, and a `source.tree_sha256` that matches the current files. Any edit after `verify` needs a new `verify`. The digest leaves out `.evidence/` and the change's own `closure.json`, so writing the closure does not invalidate its evidence. It stops stale evidence, not forgery; CI and owner review stay the gates. Other references may accompany it. It never cites the CI run of its own pull request, which cannot exist yet.
+- **Cite only existing evidence.** A closure cites only evidence that exists when it is written, normally the local `verify` evidence from step 4. `close` refuses unless at least one reference is a `repo.py verify --change <id>` evidence file from a full run: complete, every check in `checks.json` `passed`, HEAD as its `source.commit`, and a `source.tree_sha256` that matches the current files. Any edit after `verify` needs a new `verify`. The digest covers paths, modes and content. It leaves out `.evidence/` and the change's own `closure.json`, so writing the closure does not invalidate its evidence. `close` records it as `tree_sha256`, and `status` reports `closure-stale` when a candidate's files no longer match, including on a branch that is behind the baseline, because CI checks the pull request merged with its base. It stops stale evidence, not forgery; CI and owner review stay the gates. Other references may accompany it. It never cites the CI run of its own pull request, which cannot exist yet.
 - **CI results go in the pull request.** Record CI results in the pull request description or a comment, not in `closure.json`. The required `summary` check is the merge gate.
-- **Fixes after closure.** If CI or review needs another commit after the closure exists, that same commit:
-  - re-runs local verification;
-  - replaces the closure's `evidence` with the new references;
-  - recomputes `packet_sha256` only if a packet file changed, and `baseline` only if a carried root artifact changed.
-
-  `packet_sha256` excludes `closure.json`, so updating `evidence` never changes it. No commit is made only to cite a CI run.
+- **Fixes after closure.** If CI or review needs another commit after the closure exists, work in this order, so one commit holds the fix and its closure: edit, `repo.py verify --change <id> --full`, `repo.py close <id> --evidence <ref>`, commit. `close` rewrites `evidence`, `tree_sha256`, and any changed `packet_sha256` or `baseline`. No commit is made only to cite a CI run.
 - **After merge.** The packet is frozen. Record follow-up work as a new change.
 
 ## Closure
@@ -103,7 +98,7 @@ To close a change:
 2. Run `python3 scripts/repo.py close <id> --evidence <ref>...`. It computes the digests and refuses while an approval is missing or a carried artifact is not yet merged into the root. An evidence reference that is an existing file (normally `.evidence/<run>/evidence.json`) is recorded with its sha256, so a reviewer can match it against the uploaded CI evidence. The result:
 
 ```json
-{"schema": 1, "baseline": {"spec.md": "sha256:<resulting root digest>"}, "packet_sha256": "sha256:<packet digest>", "evidence": ["<local verify evidence reference>"]}
+{"schema": 1, "baseline": {"spec.md": "sha256:<resulting root digest>"}, "packet_sha256": "sha256:<packet digest>", "tree_sha256": "sha256:<verified tree digest>", "evidence": ["<local verify evidence reference>"]}
 ```
 
 Rerunning `close` after a fix rewrites the file with fresh evidence. See Lifecycle for when to add the closure and which evidence it may cite.

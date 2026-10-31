@@ -121,6 +121,30 @@ class Verify(RepoCase):
         self.write("src/a.txt", "x\n")
         self.assertFalse(self.verify()["complete"])
 
+    def test_files_changed_during_the_run_fail_it(self):
+        self.configure(check("src", code="open('src/made.txt', 'w').write('x')"))
+        self.write("src/a.txt", "x\n")
+        proc = self.run_repo("verify", "--full")
+        self.assertEqual(proc.returncode, 1, proc.stdout)
+        self.assertIn("files changed during the run", proc.stdout)
+
+    def test_a_partial_group_run_still_exits_zero(self):
+        self.configure(check("src"), check("web", group="web"))
+        self.write("src/a.txt", "x\n")
+        self.assertEqual(self.run_repo("verify", "--group", "core").returncode, 0)
+
+    def test_digest_binds_a_submodule_commit(self):
+        sys.path.insert(0, str(REPO_PY.parent))
+        import repo  # noqa: E402
+
+        self.configure(check("src"))
+        head = self.git("rev-parse", "HEAD")
+        (self.root / "sub").mkdir()
+        self.git("update-index", "--add", "--cacheinfo", f"160000,{head},sub")
+        first = repo.candidate_digest(self.root, None)
+        self.git("update-index", "--cacheinfo", f"160000,{'1' * 40},sub")
+        self.assertNotEqual(repo.candidate_digest(self.root, None), first)
+
     def test_printed_evidence_path_is_relative(self):
         self.configure(check("src"))
         self.write("src/a.txt", "x\n")

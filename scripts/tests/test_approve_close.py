@@ -112,7 +112,7 @@ class Close(RepoCase):
         closure = json.loads(self.read("changes/imp/closure.json"))
         self.assertEqual(closure["baseline"], {})
         self.assertEqual(closure["evidence"], [".evidence/run/evidence.json " + digest(evidence_text), "review: none needed"])
-        self.assertEqual(set(closure), {"schema", "baseline", "packet_sha256", "evidence"})
+        self.assertEqual(set(closure), {"schema", "baseline", "packet_sha256", "tree_sha256", "evidence"})
         result = self.status("--change", "imp")
         self.assertEqual((result["by_id"]["imp"]["stage"], result["by_id"]["imp"]["closure"]), ("closed", "candidate"))
         self.assertTrue(result["ok"], result["failures"])
@@ -152,6 +152,29 @@ class Close(RepoCase):
         self.assertIn("already closed on 'main'", proc.stderr)
         self.assertEqual(self.read("changes/init/closure.json"), before)
         self.assertEqual(self.status()["by_id"]["init"]["closure"], "frozen")
+
+    def test_records_the_verified_tree(self):
+        self.ready_repository_change()
+        ref = self.verify_evidence("imp")
+        proc = self.run_repo("close", "imp", "--evidence", ref)
+        self.assertEqual(proc.returncode, 0, proc.stderr)
+        verified = json.loads(self.read(ref))["source"]["tree_sha256"]
+        self.assertEqual(json.loads(self.read("changes/imp/closure.json"))["tree_sha256"], verified)
+
+    def test_refuses_a_mode_change_after_verify(self):
+        self.ready_repository_change()
+        self.write("run.sh", "echo\n")
+        ref = self.verify_evidence("imp")
+        (self.root / "run.sh").chmod(0o755)
+        self.assertEvidenceRefused("files changed", ref)
+
+    def test_refuses_a_file_replaced_by_the_same_symlink_text(self):
+        self.ready_repository_change()
+        self.write("link", "target")
+        ref = self.verify_evidence("imp")
+        (self.root / "link").unlink()
+        (self.root / "link").symlink_to("target")
+        self.assertEvidenceRefused("files changed", ref)
 
     def assertEvidenceRefused(self, fragment, ref):
         proc = self.run_repo("close", "imp", "--evidence", ref)
