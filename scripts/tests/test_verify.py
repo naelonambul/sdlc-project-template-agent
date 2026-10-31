@@ -145,6 +145,22 @@ class Verify(RepoCase):
         self.git("update-index", "--cacheinfo", f"160000,{'1' * 40},sub")
         self.assertNotEqual(repo.candidate_digest(self.root, None), first)
 
+    def test_malformed_config_blocks(self):
+        self.write("checks.json", "{bad")
+        proc = self.run_repo("verify", "--full")
+        self.assertEqual(proc.returncode, 1)
+        self.assertIn("blocked", proc.stderr)
+        self.assertNotIn("Traceback", proc.stderr)
+
+    def test_a_non_executable_check_is_blocked_with_evidence(self):
+        self.write("c.sh", "#!/bin/sh\n")
+        self.configure({**check("src"), "argv": ["./c.sh"]})
+        self.write("src/a.txt", "x\n")
+        result = self.verify("--full")
+        self.assertEqual(result["exit"], 1, result["stderr"])
+        self.assertEqual(result["by_id"]["src"]["status"], "blocked")
+        self.assertNotIn("Traceback", result["stderr"])
+
     def test_printed_evidence_path_is_relative(self):
         self.configure(check("src"))
         self.write("src/a.txt", "x\n")

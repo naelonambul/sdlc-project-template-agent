@@ -1,0 +1,26 @@
+{
+  "schema": 1,
+  "id": "small-gates",
+  "kind": "repository",
+  "title": "Close small gate gaps found in the v2.2.0 reviews",
+  "base": {
+    "ref": "main",
+    "commit": "567e99e218af15c3d3ab3a96a163d9cabed6032c"
+  },
+  "baseline": {},
+  "write_scope": [
+    "scripts/repo.py",
+    "scripts/tests/test_status.py",
+    "scripts/tests/test_verify.py"
+  ],
+  "approvals": [
+    {
+      "artifact": "plan.md",
+      "sha256": "sha256:1a1605dfc218d4005a293ddcce4abdd128841fd6319d0a0b6dfd992e153b9ac6",
+      "by": "naelonambul",
+      "at": "2026-10-31T01:19:45Z",
+      "write_scope_sha256": "sha256:b426146f74239438c4686e1ad726622d483e35746e7803ace6c9e6a7c454392c",
+      "note": "Owner approved in chat (\"\uc2b9\uc778\") after reviewing digest 1a1605df"
+    }
+  ]
+}
