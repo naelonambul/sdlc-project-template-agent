@@ -49,7 +49,7 @@ Codex reads `AGENTS.md` and discovers skills in `.agents/skills/` itself. No ada
 
 Codex also lists user-level and built-in skills alongside the repository's. Only the repository's skills are part of the contract.
 
-The `workspace-write` sandbox keeps `.git` read-only, so Codex cannot commit in a plain clone. Either make commits outside the sandbox, or keep the Git data outside the worktree, add that directory as a writable root and set `GIT_DIR` and `GIT_WORK_TREE`. The control-plane tests clear these variables, so their fixtures stay out of that data.
+The `workspace-write` sandbox keeps `.git` read-only, so Codex cannot commit in a plain clone. Either make commits outside the sandbox, or keep the Git data outside the worktree, add that directory as a writable root and set `GIT_DIR` and `GIT_WORK_TREE`. The control-plane tests clear these variables, so their fixtures stay out of that data. `repo.py verify` passes them to registered checks, because a check may need Git, so a product test that creates its own Git fixtures must clear them too.
 
 ### Smoke-test results
 
@@ -68,6 +68,8 @@ The `workspace-write` sandbox keeps `.git` read-only, so Codex cannot commit in 
 | 2026-10-30 | Claude Code CLI 2.1.314 | shortened `sdlc-artifacts` Close section; probes run non-interactively in a scratch copy | yes | 4/4 core skills |
 | 2026-10-30 | Claude Code CLI 2.1.314 | changed `sdlc-artifacts` and `repository-quality`; probes run non-interactively in a scratch copy | yes | 4/4 core skills |
 | 2026-10-30 | Codex CLI 0.156.1 | same scratch copy, `codex exec --sandbox read-only` | yes | 4/4 core skills |
+| 2026-10-31 | Claude Code CLI 2.1.314 | changed `AGENTS.md` and skills; no `CLAUDE.md`, adapters present; probes run non-interactively in a scratch copy | yes (no, with a shadowing `CLAUDE.md`) | 4/4 core skills |
+| 2026-10-31 | Codex CLI 0.166.0 | same scratch copy, `codex exec --skip-git-repo-check --sandbox read-only` | yes | 4/4 core skills |
 
 The desktop app is **not verified**. Re-run the procedure below from a desktop session before claiming support. No other agent surface has been tested. Cursor is not a target.
 

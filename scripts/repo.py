@@ -1156,7 +1156,7 @@ def compute_status(ctx: Context, args) -> dict:
                 for r in errors
                 if r.code in integrity or (r.code.startswith("closure") and st.anchor)
             ]
-    failures += [f"{cid}: frozen packet removed from the candidate" for cid in removed_frozen(ctx)]
+    failures += [f"{cid}: frozen packet removed from the candidate; if this branch is behind the baseline, update it" for cid in removed_frozen(ctx)]
     if args.pr_body is not None and active.id in statuses:
         failures += pull_request_failures(statuses[active.id], result["changed_paths"])
     failures += [r.message for r in surface if r.level == "error"]
