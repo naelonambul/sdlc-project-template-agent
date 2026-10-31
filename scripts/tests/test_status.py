@@ -182,6 +182,59 @@ class Revision(RepoCase):
         self.assertNotIn("out-of-order", self.codes(self.status("--change", "beh"), "beh"))
 
 
+class SmallGates(RepoCase):
+    def wiring(self, comment):
+        checks = [{"id": g, "group": g, "argv": ["python3", "-c", "1"], "cwd": ".", "timeout_seconds": 9, "paths": ["**"], "requires": []} for g in ("core", "web")]
+        self.write("checks.json", json.dumps({"schema": 1, "baseline_branch": "main", "checks": checks}))
+        self.write(".github/workflows/repository.yml", f"jobs:\n  a:\n    steps:\n      - run: python3 scripts/repo.py verify --group core\n{comment}\n")
+
+    def test_the_marker_cannot_unestablish_an_established_baseline(self):
+        self.establish_baseline()
+        self.git("switch", "-q", "-c", "change/r")
+        self.packet("r", kind="repository", scope=["spec.md"])
+        self.approve("r", "plan.md")
+        self.write("spec.md", UNESTABLISHED + "# gone\n")
+        self.assertFailed(self.status("--change", "r"), "may not modify established root")
+
+    def test_an_unestablished_baseline_can_still_be_reshaped(self):
+        self.git("switch", "-q", "-c", "change/r")
+        self.packet("r", kind="repository", scope=["spec.md"])
+        self.approve("r", "plan.md")
+        self.write("spec.md", UNESTABLISHED + "# Spec\nreshaped\n")
+        self.assertNotIn("out-of-scope", self.codes(self.status("--change", "r"), "r"))
+
+    def test_identical_repeated_change_ids_fail(self):
+        self.packet("imp", kind="repository")
+        self.write("../body.md", "Change-ID: imp\nChange-ID: imp\n")
+        result = self.status("--branch=", "--pr-body", str(self.root.parent / "body.md"))
+        self.assertFailed(result, "several Change-IDs")
+
+    def test_malformed_config_is_reported_not_raised(self):
+        for text in ("{bad", "[]"):
+            with self.subTest(text=text):
+                self.write("checks.json", text)
+                result = self.status()
+                self.assertEqual(result["exit"], 1)
+                self.assertTrue(any("checks.json" in f for f in result["failures"]), result["failures"])
+
+    def test_a_non_string_baseline_digest_is_reported_not_raised(self):
+        self.establish_baseline()
+        self.packet("imp", baseline={"intent.md": 7, "spec.md": 7})
+        self.assertIn("stale-baseline", self.codes(self.status("--change", "imp"), "imp"))
+
+    def test_an_unhashable_check_id_is_reported_not_raised(self):
+        self.write("checks.json", json.dumps({"schema": 1, "checks": [{"id": ["x"]}]}))
+        self.assertEqual(self.status()["exit"], 1)
+
+    def test_a_commented_group_line_is_not_a_job(self):
+        self.wiring("      # - run: python3 scripts/repo.py verify --group web")
+        self.assertFailed(self.status(), "check group 'web' has no")
+
+    def test_a_trailing_comment_is_not_a_job(self):
+        self.wiring("      - run: echo hi # python3 scripts/repo.py verify --group web")
+        self.assertFailed(self.status(), "check group 'web' has no")
+
+
 class ScopeBinding(RepoCase):
     def approved(self):
         self.packet("imp", kind="repository", scope=["src/**", "docs/**"])
