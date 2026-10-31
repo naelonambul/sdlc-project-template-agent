@@ -45,6 +45,8 @@ KINDS = {
     # baseline and may not modify an established root intent.md or spec.md.
     "repository": ({"plan.md"}, set()),
 }
+# An out-of-date closure fails status, but work on the change may go on: `close` rewrites it.
+CLOSURE_REFRESH = {"closure-invalid", "closure-stale", "closure-unmerged"}
 CHANGE_KEYS = {"schema", "id", "kind", "title", "base", "baseline", "write_scope", "approvals"}
 CLOSURE_KEYS = {"schema", "baseline", "packet_sha256", "tree_sha256", "evidence"}
 APPROVAL_KEYS = {"artifact", "sha256", "write_scope_sha256", "by", "at", "note"}
@@ -430,7 +432,7 @@ def evaluate_change(ctx: Context, change_id: str) -> ChangeStatus:
         st.freshness = "frozen"
     elif stale_baseline or stale_approval:
         st.freshness = "stale"
-    blocking = [r for r in st.reasons if r.level in ("error", "pending")]
+    blocking = [r for r in st.reasons if r.level in ("error", "pending") and r.code not in CLOSURE_REFRESH]
     st.readiness = "ready" if not blocking and st.stage in ("implementation", "closed") else "blocked"
     return st
 
@@ -440,6 +442,14 @@ def root_state(ctx: Context, name: str):
     if not path.is_file():
         return None, None
     data = path.read_bytes()
+    return sha256_bytes(data), UNESTABLISHED.encode() not in data
+
+
+def baseline_state(ctx: Context, name: str):
+    """The baseline branch's copy of a root artifact; the change itself replaces its branch's copy."""
+    data = git(ctx.root, "show", f"{ctx.baseline_ref}:{name}", binary=True, check=False) if ctx.baseline_ref else None
+    if data is None:
+        return root_state(ctx, name)
     return sha256_bytes(data), UNESTABLISHED.encode() not in data
 
 
@@ -456,6 +466,8 @@ def check_baseline(ctx: Context, st: ChangeStatus, data: dict, present: set) -> 
         if digest is None:
             st.add("error", "missing-upstream", f"root {name} does not exist")
             continue
+        if local is not None:
+            digest, established = baseline_state(ctx, name)
         if local is not None and digest == local:
             continue  # the change's own accepted artifact has been merged into the root baseline
         if st.kind == "product-init":
@@ -718,7 +730,7 @@ def check_scope(ctx: Context, st: ChangeStatus) -> list[str]:
     implementation = [p for p in paths if not p.startswith(own)]
     if implementation and any(r.level == "pending" for r in st.reasons):
         st.add("error", "not-ready", f"{len(implementation)} path(s) outside the packet changed before the change is ready")
-    if st.errors:
+    if any(r.code not in CLOSURE_REFRESH for r in st.errors):
         st.readiness = "blocked"
     return paths
 

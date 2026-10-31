@@ -151,6 +151,52 @@ class RevisionAfterClosure(RepoCase):
         self.assertCurrent()
 
 
+class CarriedRevisionAfterClosure(RevisionAfterClosure):
+    def setUp(self):
+        RepoCase.setUp(self)
+        self.write(".gitignore", ".evidence/\n")
+        check = {"id": "check", "group": "core", "argv": [sys.executable, "-c", "print('ok')"], "cwd": ".", "timeout_seconds": 30, "paths": ["**"], "requires": []}
+        self.write("checks.json", json.dumps({"schema": 1, "baseline_branch": "main", "checks": [check]}))
+        self.establish_baseline()
+        self.git("switch", "-q", "-c", "change/imp")
+        self.packet("imp", kind="behavior", scope=["src/**", "spec.md"], artifacts={"spec.md": "# Spec\nv1\n", "plan.md": "# Plan\n"})
+        self.owner_approves("spec.md", "plan.md")
+        self.write("spec.md", "# Spec\nv1\n")
+        self.write("src/a.txt", "x\n")
+        self.close_again()
+
+    def owner_approves(self, *names):
+        for name in names:
+            proc = self.run_repo("approve", "imp", name, "--by", "owner")
+            self.assertEqual(proc.returncode, 0, proc.stderr)
+
+    def test_a_revised_plan_can_be_approved_and_closed_again(self):
+        self.write("changes/imp/plan.md", "# Plan v2\n")
+        self.owner_approves("plan.md")
+        self.close_again()
+        self.assertCurrent()
+
+    def test_a_widened_scope_can_be_approved_and_closed_again(self):
+        self.set_scope("imp", ["src/**", "spec.md", "docs/**"])
+        self.write("docs/a.md", "x\n")
+        self.owner_approves("plan.md")
+        self.close_again()
+        self.assertCurrent()
+
+    def test_a_revised_carried_spec_reaches_a_current_closure(self):
+        self.write("changes/imp/spec.md", "# Spec\nv2\n")
+        self.write("changes/imp/plan.md", "# Plan v2\n")
+        self.owner_approves("spec.md", "plan.md")
+        result = self.status("--change", "imp")
+        self.assertEqual(result["by_id"]["imp"]["readiness"], "ready", result["failures"])
+        self.assertNotIn("stale-baseline", self.codes(result, "imp"))
+        self.assertEqual(result["exit"], 1)
+        self.write("spec.md", "# Spec\nv2\n")
+        self.write("src/a.txt", "y\n")
+        self.close_again()
+        self.assertCurrent()
+
+
 class Close(RepoCase):
     def ready_repository_change(self):
         self.packet("imp", kind="repository", scope=["src/**"])
