@@ -126,6 +126,7 @@ class RepoCase(unittest.TestCase):
             "schema": 1,
             "baseline": {n: digest(self.read(n)) for n in carried},
             "packet_sha256": repo.packet_digest(files),
+            "tree_sha256": repo.candidate_digest(self.root, cid),
             "evidence": list(evidence),
             **override,
         }

@@ -333,6 +333,63 @@ class Closure(RepoCase):
         self.assertEqual((change["stage"], change["closure"], change["readiness"]), ("closed", "candidate", "ready"))
         self.assertTrue(result["ok"], result["failures"])
 
+    def closed_candidate(self):
+        self.establish_baseline()
+        self.git("switch", "-q", "-c", "change/imp")
+        self.packet("imp", kind="repository", scope=["src/**"])
+        self.approve("imp", "plan.md")
+        self.write("src/a.txt", "x\n")
+        self.close("imp")
+        self.commit("close imp")
+
+    def test_a_code_commit_after_closure_makes_it_stale(self):
+        self.closed_candidate()
+        self.assertEqual(self.status("--change", "imp")["by_id"]["imp"]["closure"], "candidate")
+        self.write("src/a.txt", "y\n")
+        self.commit("edit after closure")
+        result = self.status("--change", "imp")
+        self.assertEqual(result["by_id"]["imp"]["closure"], "invalid")
+        self.assertIn("closure-stale", self.codes(result, "imp"))
+        self.assertEqual(result["exit"], 1)
+
+    def test_a_refreshed_closure_is_current_again(self):
+        self.closed_candidate()
+        self.write("src/a.txt", "y\n")
+        self.close("imp")
+        self.commit("edit and refresh")
+        self.assertEqual(self.status("--change", "imp")["by_id"]["imp"]["closure"], "candidate")
+
+    def test_a_candidate_closure_needs_a_tree_digest(self):
+        self.closed_candidate()
+        closure = json.loads(self.read("changes/imp/closure.json"))
+        del closure["tree_sha256"]
+        self.write("changes/imp/closure.json", json.dumps(closure))
+        self.assertIn("closure-stale", self.codes(self.status("--change", "imp"), "imp"))
+
+    def test_a_frozen_closure_needs_no_tree_digest(self):
+        self.establish_baseline()
+        closure = json.loads(self.read("changes/init/closure.json"))
+        del closure["tree_sha256"]
+        self.git("reset", "-q", "--soft", "HEAD~1")
+        self.write("changes/init/closure.json", json.dumps(closure))
+        self.commit("close init")
+        self.assertEqual(self.status()["by_id"]["init"]["closure"], "frozen")
+
+    def test_an_ignored_packet_file_leaves_the_packet_digest_alone(self):
+        self.write(".gitignore", "*.tmp\n")
+        self.closed_candidate()
+        self.write("changes/imp/scratch.tmp", "x\n")
+        self.assertEqual(self.status("--change", "imp")["by_id"]["imp"]["closure"], "candidate")
+
+    def test_a_packet_symlink_digests_the_same_in_the_worktree_and_a_commit(self):
+        sys.path.insert(0, str(REPO_PY.parent))
+        import repo  # noqa: E402
+
+        self.packet("imp", kind="repository")
+        (self.root / "changes/imp/link").symlink_to("plan.md")
+        head = self.commit("packet")
+        self.assertEqual(repo.worktree_packet(self.root, "imp"), repo.tree_packet(self.root, head, "imp"))
+
     def test_closure_before_approval_is_blocked(self):
         self.packet("alpha", kind="repository")
         self.close("alpha")

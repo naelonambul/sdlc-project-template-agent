@@ -1,0 +1,30 @@
+{
+  "schema": 1,
+  "id": "closure-tree-binding",
+  "kind": "repository",
+  "title": "Bind a candidate closure to the verified tree, and fail verify on an unstable run",
+  "base": {
+    "ref": "main",
+    "commit": "d4306bee0821b6411f666c3e07551fe516f16c9f"
+  },
+  "baseline": {},
+  "write_scope": [
+    "scripts/repo.py",
+    "scripts/tests/support.py",
+    "scripts/tests/test_approve_close.py",
+    "scripts/tests/test_status.py",
+    "scripts/tests/test_verify.py",
+    "scripts/tests/test_new.py",
+    "changes/README.md"
+  ],
+  "approvals": [
+    {
+      "artifact": "plan.md",
+      "sha256": "sha256:ce202959681e55cc25bf20589275815200381cc2f47f2d6dddf928bfa26b64d4",
+      "by": "naelonambul",
+      "at": "2026-10-31T00:18:05Z",
+      "write_scope_sha256": "sha256:2dbf4d81783779e1de2da28a3b5231a0bf07d406da09992122198824624f0393",
+      "note": "Owner approved in chat (\"\uc2b9\uc778\") after reviewing digest ce202959"
+    }
+  ]
+}

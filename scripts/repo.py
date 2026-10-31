@@ -46,7 +46,7 @@ KINDS = {
     "repository": ({"plan.md"}, set()),
 }
 CHANGE_KEYS = {"schema", "id", "kind", "title", "base", "baseline", "write_scope", "approvals"}
-CLOSURE_KEYS = {"schema", "baseline", "packet_sha256", "evidence"}
+CLOSURE_KEYS = {"schema", "baseline", "packet_sha256", "tree_sha256", "evidence"}
 APPROVAL_KEYS = {"artifact", "sha256", "write_scope_sha256", "by", "at", "note"}
 
 
@@ -91,11 +91,14 @@ def packet_digest(files: dict[str, bytes]) -> str:
 
 
 def worktree_packet(root: Path, change_id: str) -> dict[str, bytes]:
-    base = root / CHANGES / change_id
+    prefix = f"{CHANGES}/{change_id}/"
     out = {}
-    for path in sorted(base.rglob("*")):
-        if path.is_file():
-            out[path.relative_to(base).as_posix()] = path.read_bytes()
+    for rel in sorted(set(git_paths(root, "ls-files", "-co", "--exclude-standard", "-z", "--", prefix))):
+        path = root / rel
+        if path.is_symlink():
+            out[rel[len(prefix):]] = os.readlink(path).encode()
+        elif path.is_file():
+            out[rel[len(prefix):]] = path.read_bytes()
     return out
 
 
@@ -484,6 +487,9 @@ def validate_closure(st: ChangeStatus, closure, carried: set) -> bool:
     if not DIGEST_RE.match(str(closure.get("packet_sha256"))):
         st.add("error", "closure-invalid", "closure packet_sha256 must be a sha256 digest")
         ok = False
+    if "tree_sha256" in closure and not DIGEST_RE.match(str(closure["tree_sha256"])):
+        st.add("error", "closure-invalid", "closure tree_sha256 must be a sha256 digest")
+        ok = False
     evidence = closure.get("evidence")
     if not isinstance(evidence, list) or not evidence or not all(isinstance(e, str) and e.strip() for e in evidence):
         st.add("error", "closure-invalid", "closure evidence must list at least one verification reference")
@@ -571,6 +577,9 @@ def check_candidate_closure(ctx: Context, st: ChangeStatus, carried: set) -> Non
     if ok and closure["packet_sha256"] != packet_digest(worktree_packet(ctx.root, st.id)):
         ok = False
         st.add("error", "closure-invalid", "closure packet_sha256 does not match the current packet")
+    if ok and closure.get("tree_sha256") != candidate_digest(ctx.root, st.id):
+        ok = False
+        st.add("error", "closure-stale", "files changed since the closure was written; update the branch if it is behind the baseline, then run repo.py verify and repo.py close again")
     for name in sorted(carried):
         root_digest, _ = root_state(ctx, name)
         local = file_digest(packet_dir / name)
@@ -946,20 +955,28 @@ def run_check(ctx: Context, check: dict, log_path: Path) -> dict:
 
 
 def candidate_digest(root: Path, cid: str | None) -> str:
-    """Digest of the candidate's files, leaving out evidence and the change's own closure."""
+    """Digest of the candidate's paths, modes and content, leaving out evidence and the change's own closure."""
     closure = f"{CHANGES}/{cid}/{CLOSURE}"
+    gitlinks = {}
+    for entry in git_paths(root, "ls-files", "-s", "-z"):
+        meta, rel = entry.split("\t", 1)
+        mode, oid, _stage = meta.split()
+        if mode == "160000":
+            gitlinks[rel] = oid
     digest = hashlib.sha256()
-    for rel in sorted(set(git(root, "ls-files", "-co", "--exclude-standard", "-z").split("\0"))):
+    for rel in sorted(set(git_paths(root, "ls-files", "-co", "--exclude-standard", "-z"))):
         path = root / rel
-        if not rel or rel == closure or rel.startswith(".evidence/"):
+        if rel == closure or rel.startswith(".evidence/"):
             continue
-        if path.is_symlink():
-            data = os.readlink(path).encode()
+        if rel in gitlinks:
+            mode, data = "160000", gitlinks[rel].encode()
+        elif path.is_symlink():
+            mode, data = "120000", os.readlink(path).encode()
         elif path.is_file():
-            data = path.read_bytes()
+            mode, data = ("100755" if os.access(path, os.X_OK) else "100644"), path.read_bytes()
         else:
             continue
-        digest.update(f"{rel}\0{sha256_bytes(data)}\n".encode())
+        digest.update(f"{mode} {rel}\0{sha256_bytes(data)}\n".encode())
     return "sha256:" + digest.hexdigest()
 
 
@@ -1075,7 +1092,7 @@ def cmd_verify(args) -> int:
             path = out_dir / "evidence.json"
             print(f"evidence: {path.relative_to(ctx.root) if path.is_relative_to(ctx.root) else path}")
     bad = [r for r in results if r["status"] in ("failed", "blocked")]
-    return 1 if bad else 0
+    return 1 if bad or not stable else 0
 
 # --------------------------------------------------------------------------
 # commands
@@ -1461,6 +1478,7 @@ def closure_record(root: Path, args) -> tuple[Path, dict]:
         "schema": SCHEMA,
         "baseline": baseline,
         "packet_sha256": packet_digest(worktree_packet(root, cid)),
+        "tree_sha256": candidate_digest(root, cid),
         "evidence": refs,
     }
     return packet_dir / CLOSURE, closure
