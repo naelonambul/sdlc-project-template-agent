@@ -50,7 +50,7 @@ Project build, test, lint, format-check, and type-check commands are registered 
 Before reporting implementation complete:
 
 - Confirm the approved change plan is satisfied or explicitly revised and re-approved.
-- `repo.py status --change <id>` passes and `repo.py verify --change <id>` reports no `failed` or `blocked` check and a complete run (no `not-run` check). `--group` runs are partial execution units: CI runs every group in its own job, and the summary requires them all.
+- `repo.py status --change <id>` passes and `repo.py verify --change <id> --full`, which `close` requires, reports no `failed` or `blocked` check and a complete run (no `not-run` check). `--group` runs are partial execution units: CI runs every group in its own job, and the summary requires them all.
 - Report the exact validation performed, its result, and the evidence path. `blocked` is never success.
 - Review the change against `REVIEW.md`.
 - Confirm no generated analysis metadata, credentials, or unrelated changes are included.

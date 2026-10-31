@@ -44,7 +44,7 @@ Add the verify skill through a normal change packet whose `write_scope` covers t
 
 ### Promote
 
-Interactive driving is for exploring and reproducing. Once a drive has proven something worth re-checking, freeze it: save the exact steps as a replayable script that asserts on the oracle, register it in `checks.json` (its own group and CI job when the toolchain needs one; a local, `requires`-guarded check when CI cannot host the platform), and point the feature file at it. `references/platforms.md`, "Explore, then freeze", has the steps. A reproduction from an `incident` change is promoted this way and becomes the fix's regression test.
+Interactive driving is for exploring and reproducing. Once a drive has proven something worth re-checking, freeze it: save the exact steps as a replayable script that asserts on the oracle, register it in `checks.json` (its own group and CI job when the toolchain needs one; when CI cannot host the platform, keep it unregistered and cite the local run in the pull request), and point the feature file at it. `references/platforms.md`, "Explore, then freeze", has the steps. A reproduction from an `incident` change is promoted this way and becomes the fix's regression test.
 
 ## Maintain
 

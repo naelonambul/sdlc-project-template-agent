@@ -20,7 +20,7 @@ A session that pushes under the owner's own token (for example a cloud session w
 
 ## Merge policy
 
-- Allow **squash merge** only, with one change per pull request. `repo.py` derives each change's closure anchor from the first-parent history of `main`, so merge commits and rebase-merges also work if a project prefers them.
+- Allow **squash merge** only, with one change per pull request. `repo.py` derives each change's closure anchor from the first-parent history of `main`, so merge commits also work if a project prefers them. Rebase merges do not, once a closure has been refreshed.
 - Keep `main` linear enough that first-parent history is meaningful: no direct pushes that bypass pull requests.
 - In the repository settings, allow squash merging only and disable merge commits and rebase merging.
 - Optionally, enable automatic deletion of head branches.

@@ -1,0 +1,33 @@
+{
+  "schema": 1,
+  "id": "later-change-docs",
+  "kind": "repository",
+  "title": "Correct the lifecycle docs for later changes, local checks and merges",
+  "base": {
+    "ref": "main",
+    "commit": "6d139e361c6478798baae8660e1754a713dbe57d"
+  },
+  "baseline": {},
+  "write_scope": [
+    "AGENTS.md",
+    "changes/README.md",
+    "docs/host-setup.md",
+    "docs/agent-surfaces.md",
+    ".agents/skills/repository-quality/SKILL.md",
+    ".agents/skills/sdlc-artifacts/SKILL.md",
+    ".agents/skills/verification-map/SKILL.md",
+    ".agents/skills/verification-map/references/platforms.md",
+    "scripts/repo.py",
+    "scripts/tests/test_status.py"
+  ],
+  "approvals": [
+    {
+      "artifact": "plan.md",
+      "sha256": "sha256:11debdbc44fb87f0c3dc6a7850ecffade2ba6a9a373ddee31260ce05cc3473f4",
+      "by": "naelonambul",
+      "at": "2026-10-31T00:47:42Z",
+      "write_scope_sha256": "sha256:3741836fb9b0fbba7eb1bebbb6345adcc029ba70c7e75f9756cab0593e8c312d",
+      "note": "Owner approved in chat (\"\uc2b9\uc778\") after reviewing digest 11debdbc"
+    }
+  ]
+}

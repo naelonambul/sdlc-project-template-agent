@@ -70,7 +70,7 @@ Never model a gate that does not apply as a skipped CI job. `repo.py` decides `n
 ## Validate proportionally
 
 - During iteration, run the smallest relevant checks that provide fast feedback.
-- Before completion, run every applicable canonical check through `repo.py verify` (use `--full` when routing is not enough), plus anything the approved plan requires.
+- Before completion, run every canonical check through `repo.py verify --change <id> --full`, which `close` requires, plus anything the approved plan requires.
 - Treat visual or runtime verification as part of validation when the approved plan requires it.
 - If meaningful validation cannot yet exist because the product stack is not established, state that fact instead of installing speculative tooling.
 

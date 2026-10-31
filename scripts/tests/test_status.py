@@ -425,6 +425,20 @@ class Closure(RepoCase):
         head = self.commit("packet")
         self.assertEqual(repo.worktree_packet(self.root, "imp"), repo.tree_packet(self.root, head, "imp"))
 
+    def test_a_branch_behind_the_baseline_is_told_so(self):
+        self.establish_baseline()
+        self.git("switch", "-q", "-c", "change/imp")
+        self.packet("imp", kind="repository")
+        self.approve("imp", "plan.md")
+        self.commit("packet")
+        self.git("switch", "-q", "main")
+        self.packet("other", kind="repository")
+        self.approve("other", "plan.md")
+        self.close("other")
+        self.commit("close other")
+        self.git("switch", "-q", "change/imp")
+        self.assertFailed(self.status("--change", "imp"), "if this branch is behind the baseline, update it")
+
     def test_closure_before_approval_is_blocked(self):
         self.packet("alpha", kind="repository")
         self.close("alpha")

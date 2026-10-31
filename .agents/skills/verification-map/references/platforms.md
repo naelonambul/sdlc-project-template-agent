@@ -36,7 +36,7 @@ When a drive has proven something worth re-checking, promote it:
 
 1. **Save** the exact drive as a replayable script in the repository's conventional place (a Maestro flow, a Playwright test, an agent-device session, a shell script with assertions). The script asserts on the oracle, not on a screenshot.
 2. **Register** it in `checks.json` with its own group and, if the toolchain is not Python and Git, its own CI job that installs that toolchain, following the `repository-quality` skill. From then on `repo.py verify` runs it and routes changed paths to it.
-3. **Keep it local** when CI cannot afford or host it (iOS simulator, a desktop app, a device farm). It is still a registered check with `requires` naming its tools; CI reports it `blocked`, not passed, and the change cites the local run's `.evidence/` in the pull request.
+3. **Keep it local** when CI cannot afford or host it (iOS simulator, a desktop app, a device farm). Do not register it in `checks.json`: `close` needs every registered check `passed`, and a `blocked` check fails CI. Keep the script in the repository, run it locally, and cite the result in the pull request.
 4. **Point the feature file** at the script, so the next agent replays before it explores.
 
 A reproduction drive from an `incident` change is promoted the same way, which is how the fix gets its regression test.
