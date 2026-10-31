@@ -1,0 +1,27 @@
+{
+  "schema": 1,
+  "id": "post-closure-revision",
+  "kind": "repository",
+  "title": "Let an unmerged closed change be revised and re-approved, with clearer status",
+  "base": {
+    "ref": "main",
+    "commit": "90d8d4d68e23decc4ac38d70d23c0185436bb32a"
+  },
+  "baseline": {},
+  "write_scope": [
+    "scripts/repo.py",
+    "scripts/tests/test_approve_close.py",
+    "scripts/tests/test_status.py",
+    "changes/README.md"
+  ],
+  "approvals": [
+    {
+      "artifact": "plan.md",
+      "sha256": "sha256:051ab5589afa357bf4c96ed098d05ad34ff664e2faa2521f457913f57b667238",
+      "by": "naelonambul",
+      "at": "2026-10-31T00:39:06Z",
+      "write_scope_sha256": "sha256:5108f0cfd688c4d7001988355cbbdca947aca84a552ac9c533438155e2946883",
+      "note": "Owner approved in chat (\"\uc2b9\uc778\") after reviewing digest 051ab558"
+    }
+  ]
+}

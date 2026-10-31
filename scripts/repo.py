@@ -360,11 +360,11 @@ def check_order(st: ChangeStatus, chain: list, approved_at: dict) -> None:
         later = [n for n in chain[chain.index(first_open) + 1:] if n in approved_at]
         if later:
             st.add("error", "out-of-order", f"{', '.join(later)} approved before upstream {first_open}")
-        else:
+        elif not any(r.code == "stale-approval" for r in st.reasons):
             st.add("pending", "awaiting-approval", f"{first_open} awaits a digest-bound owner approval")
     times = [approved_at[n] for n in chain if n in approved_at]
     if times != sorted(times):
-        st.add("error", "out-of-order", "approval timestamps do not follow intent -> spec -> plan order")
+        st.add("error", "out-of-order", "approval timestamps do not follow intent -> spec -> plan order; re-approve the later artifacts in order")
 
 
 def evaluate_change(ctx: Context, change_id: str) -> ChangeStatus:
@@ -1356,8 +1356,8 @@ def approval_claim(root: Path, args) -> tuple[Path, dict, dict]:
         raise Refusal(f"{CHANGES}/{cid}/{artifact} does not exist yet; draft it first")
     if is_placeholder(st.kind, packet_dir, artifact):
         raise Refusal(f"{CHANGES}/{cid}/{artifact} still carries the unestablished marker; draft it and remove the marker first")
-    if st.closure != "none" or (packet_dir / CLOSURE).exists():
-        raise Refusal("the change already has a closure; record follow-up work as a new change")
+    if st.anchor:
+        raise Refusal(f"the change is already closed on {ctx.baseline_branch!r} (anchor {st.anchor[:12]}); record follow-up work as a new change")
     chain = list(st.artifacts)
     for upstream in chain[: chain.index(artifact)]:
         if st.artifacts[upstream]["approval"] == "none":
@@ -1383,6 +1383,10 @@ def cmd_approve(args) -> int:
     write_json(path, data)
     print(f"recorded approval of {args.artifact} at {claim['sha256']} by {claim['by']} ({claim['at']})"
           + (f"; replaced {replaced} earlier claim(s) for it" if replaced else ""))
+    claimed = {c.get("artifact") for c in kept if isinstance(c, dict)}
+    downstream = [n for n in CHAIN[CHAIN.index(args.artifact) + 1:] if n in claimed]
+    if downstream:
+        print(f"approve again, in order: {', '.join(downstream)}")
     print("this is a local, unverified claim: it binds bytes, it does not prove identity")
     print(f"next: python3 scripts/repo.py status --change {args.id}")
     return 0

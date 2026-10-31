@@ -1,6 +1,8 @@
 """`repo.py approve` and `repo.py close`: mechanical, order-checked, never an authority."""
 
 import json
+import re
+import sys
 
 from scripts.tests.support import UNESTABLISHED, RepoCase, digest
 
@@ -77,9 +79,18 @@ class Approve(RepoCase):
         self.assertIn("not found", self.run_repo("approve", "nope", "plan.md", "--by", "owner").stderr)
         self.approve("imp", "plan.md")
         self.close("imp")
+        self.commit("close on main")
         proc = self.run_repo("approve", "imp", "plan.md", "--by", "owner")
         self.assertEqual(proc.returncode, 1)
-        self.assertIn("already has a closure", proc.stderr)
+        self.assertIn("already closed on 'main'", proc.stderr)
+
+    def test_notes_downstream_approvals_to_repeat(self):
+        self.establish_baseline()
+        self.packet("beh", kind="behavior", artifacts={"spec.md": "# Spec\nnew\n", "plan.md": "# P\n"})
+        self.approve("beh", "spec.md", "plan.md")
+        proc = self.run_repo("approve", "beh", "spec.md", "--by", "owner")
+        self.assertEqual(proc.returncode, 0, proc.stderr)
+        self.assertIn("approve again, in order: plan.md", proc.stdout)
 
 
 class PlaceholderProductInit(RepoCase):
@@ -94,6 +105,50 @@ class PlaceholderProductInit(RepoCase):
         proc = self.run_repo("approve", "init", "spec.md", "--by", "owner")
         self.assertEqual(proc.returncode, 1)
         self.assertIn("unestablished marker", proc.stderr)
+
+
+class RevisionAfterClosure(RepoCase):
+    def setUp(self):
+        super().setUp()
+        self.write(".gitignore", ".evidence/\n")
+        check = {"id": "check", "group": "core", "argv": [sys.executable, "-c", "print('ok')"], "cwd": ".", "timeout_seconds": 30, "paths": ["**"], "requires": []}
+        self.write("checks.json", json.dumps({"schema": 1, "baseline_branch": "main", "checks": [check]}))
+        self.commit("checks")
+        self.git("switch", "-q", "-c", "change/imp")
+        self.packet("imp", kind="repository", scope=["src/**"])
+        self.assertEqual(self.run_repo("approve", "imp", "plan.md", "--by", "owner").returncode, 0)
+        self.write("src/a.txt", "x\n")
+        self.close_again()
+
+    def close_again(self):
+        verify = self.run_repo("verify", "--change", "imp", "--full")
+        self.assertEqual(verify.returncode, 0, verify.stdout)
+        ref = re.search(r"evidence: (\S+)", verify.stdout).group(1)
+        proc = self.run_repo("close", "imp", "--evidence", ref)
+        self.assertEqual(proc.returncode, 0, proc.stderr)
+        self.commit("close imp")
+
+    def assertCurrent(self):
+        result = self.status("--change", "imp")
+        self.assertEqual(result["by_id"]["imp"]["closure"], "candidate")
+        self.assertEqual(result["by_id"]["imp"]["readiness"], "ready")
+        self.assertTrue(result["ok"], result["failures"])
+
+    def test_a_revised_plan_can_be_approved_and_closed_again(self):
+        self.write("changes/imp/plan.md", "# Plan v2\n")
+        self.assertIn("stale-approval", self.codes(self.status("--change", "imp"), "imp"))
+        proc = self.run_repo("approve", "imp", "plan.md", "--by", "owner")
+        self.assertEqual(proc.returncode, 0, proc.stderr)
+        self.close_again()
+        self.assertCurrent()
+
+    def test_a_widened_scope_can_be_approved_and_closed_again(self):
+        self.set_scope("imp", ["src/**", "docs/**"])
+        self.write("docs/a.md", "x\n")
+        proc = self.run_repo("approve", "imp", "plan.md", "--by", "owner")
+        self.assertEqual(proc.returncode, 0, proc.stderr)
+        self.close_again()
+        self.assertCurrent()
 
 
 class Close(RepoCase):
