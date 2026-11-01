@@ -12,7 +12,7 @@ Treat quality tooling as repository infrastructure. Reuse established tooling; b
 1. Read `AGENTS.md`, `checks.json`, the root baseline, and the approved change packet relevant to the task.
 2. Identify the language, framework, runtime, build system, and package manager from repository evidence or an explicit owner decision. Do not treat an exploratory prototype as a final stack decision.
 3. Inspect repository-native command surfaces such as package scripts, build manifests, task runners, Makefiles, CI workflows, and existing scripts or config files.
-4. Classify each applicable gate as established, partial, or absent: build, test, lint, format-check, type-check, and project-specific verification.
+4. Classify each applicable gate as established, partial, or absent: build, test, lint, format-check, type-check, boundaries, and project-specific verification.
 5. If the product stack is still unresolved, do not install competing quality tools. Surface the missing decision instead.
 
 ## Bootstrap missing quality tooling
@@ -50,6 +50,20 @@ Do not replace an existing valid toolchain with one of these examples merely bec
 - Do not disable, weaken, skip, delete, or rewrite a failing check merely to make validation pass.
 - Do not silently change test expectations to match broken implementation behavior.
 - Change validation configuration only when the task actually requires that configuration change and the approved change authorizes it.
+
+## Encode recurring mistakes
+
+A mistake that has happened twice is a class, whether it surfaced in review, a revert, or an owner's correction. Nothing fails when an agent skips prose, so fix the class at the highest level that works, through a change packet:
+
+1. **Architecture:** give the state one owner and the task one supported way, hide internals so the wrong import fails, and delete the old way an agent would copy.
+2. **Types:** make the bad state impossible to write.
+3. **A check:** use the stack's linter or boundary tool, registered in `checks.json`. Its failure must name the file, type, or function to use instead. If the pattern is already common, fail only on new occurrences.
+4. **A test:** assert the behaviour, not the internals.
+5. **Prose:** use it only for a judgment call. State in the plan why a higher level did not work.
+
+Prove a new check by showing it fail on the real past mistake, and record that in the change's proof. Then delete any prose rule the check replaced.
+
+Use a native tool for boundaries, such as Go `internal/`, Cargo workspaces, SwiftPM targets, `dependency-cruiser`, `import-linter`, or ArchUnit. Do not add import parsing to `repo.py`.
 
 ## Check registry contract
 
