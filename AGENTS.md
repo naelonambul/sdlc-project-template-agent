@@ -30,6 +30,7 @@ Use the `sdlc-artifacts` skill whenever creating, revising, approving, or closin
 - Do not weaken tests, lint rules, type checks, security checks, or configuration merely to make validation pass.
 - Do not commit tool caches or generated analysis metadata.
 - Prefer repository-native commands and conventions over agent preferences.
+- Commit, push, open pull requests and read CI under the agent identity, using the command path `docs/host-setup.md` selects for this host. If no path works, stop and ask the owner. Never fall back to the owner's credentials.
 - When delegating implementation, follow the `change-execution` skill. The delegating agent stays responsible for the change: workers act only from a closed brief within `write_scope`, never approve, commit, merge or edit the packet, and their reports are accepted only after the delegating agent re-runs verification itself.
 - Keep agent-specific adapters thin. Put shared policy in this file, skills, or deterministic scripts instead of duplicating it per agent. Do not add a `CLAUDE.md` that replaces this file; see `docs/agent-surfaces.md`.
 

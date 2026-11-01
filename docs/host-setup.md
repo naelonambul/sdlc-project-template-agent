@@ -78,7 +78,23 @@ A GitHub App owned by the repository owner, with no webhook, installed on select
 
 Add each new repository to the App's installation before an agent starts work: **Settings → Applications → Installed GitHub Apps → the App → Configure → Repository access → Only select repositories → Select repositories → Save**. Only the owner can do this, and creating a repository from the template does not do it. Until then, minting a token for that repository fails, for example with HTTP 422, and the agent cannot push under its identity. If the token helper has its own repository allowlist, add the repository there too. Mint one token to confirm before starting.
 
-Keep the App's private key outside every repository, readable only by the owner, never in agent context. Mint short-lived installation tokens restricted to one repository; they expire after an hour and are never stored. Commit as `<app-slug>[bot]` with the email `<bot-user-id>+<app-slug>[bot]@users.noreply.github.com`. Never add the App as a ruleset bypass actor. The token helper is host-specific and lives outside the repository. If it wraps `gh`, have it cover `pr checks` and read-only run logs, which the App's Actions permission allows. Otherwise the owner has to supply the failed lines when CI is red.
+Keep the App's private key outside every repository, readable only by the owner, never in agent context. Mint short-lived installation tokens restricted to one repository; they expire after an hour and are never stored. Commit as `<app-slug>[bot]` with the email `<bot-user-id>+<app-slug>[bot]@users.noreply.github.com`. Never add the App as a ruleset bypass actor. The token helper is host-specific and lives outside the repository.
+
+### Which commands the agent uses
+
+Every commit, push, pull request and CI read runs under the agent identity. Before the first of these in a session, the agent checks `git config user.name` and `gh auth status`, then takes the first row that matches:
+
+| Host state | Commands |
+|---|---|
+| Plain `git` and `gh` are already the agent identity | plain `git` and `gh` |
+| Plain `git` or `gh` is the owner's login, and `agent-git` and `agent-gh` are on `PATH` | `agent-git` and `agent-gh` |
+| Neither | stop and ask the owner to set one up; never use the owner's credentials instead |
+
+The wrappers are for a host where the owner's login stays on plain `git` and `gh`. The owner's setup does not change, and the agent works with a token limited to one repository that expires within an hour. These are the conventional names for this path, not required installs: a host whose plain commands are already the agent identity needs neither, and the template does not ship them.
+
+Have `agent-gh` cover `pr checks`, read-only `run list` and read-only run logs, which the App's Actions permission allows. Otherwise the owner has to confirm the post-merge `push` run and supply the failed lines when CI is red.
+
+This is a rule for the agent, not a control. Nothing here stops a session from using the owner's login, so `repo.py approve` claims, the required checks and the owner's review stay the gates.
 
 ## Read-only host check
 
