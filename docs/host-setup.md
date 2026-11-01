@@ -92,7 +92,7 @@ Every commit, push, pull request and CI read runs under the agent identity. Befo
 
 The wrappers are for a host where the owner's login stays on plain `git` and `gh`. The owner's setup does not change, and the agent works with a token limited to one repository that expires within an hour. These are the conventional names for this path, not required installs: a host whose plain commands are already the agent identity needs neither, and the template does not ship them.
 
-Have `agent-gh` cover `pr checks`, read-only `run list` and read-only run logs, which the App's Actions permission allows. Otherwise the owner has to confirm the post-merge `push` run and supply the failed lines when CI is red.
+Have `agent-gh` cover `pr checks` and read-only `run list`, so the agent can confirm the post-merge `push` run. Allow `run list` only with `--branch`, `--commit`, `--event` and `--limit`, and fix its output to workflow name, event, branch, commit SHA, status, conclusion and URL, so the `event` field tells a `push` run from a pull-request run. Refuse every other `run` command: `agent-gh` exposes no job logs, reruns or cancels, and no workflow changes. The App's Actions permission could read logs, but the wrapper does not offer them, so the owner supplies the failed lines when CI is red. A wrapper without `run list` leaves the owner to confirm the `push` run too.
 
 The command path is a rule for the agent, and CI checks its result. Set `AGENT_LOGIN` to the App's login once the App exists; this is a required step for a repository with an agent identity:
 
