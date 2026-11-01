@@ -1,0 +1,26 @@
+{
+  "schema": 1,
+  "id": "encode-recurring-mistakes",
+  "kind": "repository",
+  "title": "encode recurring mistakes, declare boundaries, triage red CI",
+  "base": {
+    "ref": "main",
+    "commit": "bd9448ebb644d8d2bace844ecf65f4ef86799138"
+  },
+  "baseline": {},
+  "write_scope": [
+    ".agents/skills/repository-quality/SKILL.md",
+    ".agents/skills/sdlc-artifacts/SKILL.md",
+    "docs/agent-surfaces.md"
+  ],
+  "approvals": [
+    {
+      "artifact": "plan.md",
+      "sha256": "sha256:ff3894cf21e039657363eef5a16ee7794134f0f60f5ca833d3b48cd8c7b5ff40",
+      "by": "naelonambul",
+      "at": "2026-11-01T01:16:00Z",
+      "write_scope_sha256": "sha256:61b23247babac4b6dba1b8bf87c65199d6a81c3205a197aa6aa50d7fa5af234c",
+      "note": "Owner in session: 'Approved, record it'"
+    }
+  ]
+}
