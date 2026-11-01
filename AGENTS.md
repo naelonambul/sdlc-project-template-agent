@@ -27,6 +27,7 @@ Use the `sdlc-artifacts` skill whenever creating, revising, approving, or closin
 - Use repository-local skills from `.agents/skills/` when their trigger applies.
 - When the product stack becomes concrete, use the `repository-quality` skill to discover existing quality tooling or bootstrap a minimal stack-appropriate setup when it is missing.
 - Do not force-push, rewrite history, hard-reset shared work, or delete unrelated changes unless explicitly instructed.
+- Do not delete, overwrite, regenerate, move, or change ignore rules for a file that existed before the current task until you have established its origin; follow "Pre-existing local files" in the `sdlc-artifacts` skill. An out-of-scope path is a status finding, not permission to remove or hide it.
 - Do not weaken tests, lint rules, type checks, security checks, or configuration merely to make validation pass.
 - Do not commit tool caches or generated analysis metadata.
 - Prefer repository-native commands and conventions over agent preferences.

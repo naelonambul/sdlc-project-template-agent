@@ -47,6 +47,18 @@ An `incident` change starts from a report (a ticket, an alert, a monitor) and it
 - If a material departure from the approved plan is needed, stop, revise `plan.md`, and get a fresh owner approval.
 - Never revise an approved upstream artifact to make implementation easier or to justify code after the fact.
 
+### Pre-existing local files
+
+A file the current task did not create may belong to the owner's IDE or tools, whether it is tracked, untracked or ignored. Before deleting, overwriting, regenerating, moving it, or changing an ignore rule that affects it:
+
+1. Establish its Git state with `git status --short --ignored -- <path>`.
+2. Identify the ignore rules that apply: root and nested `.gitignore` files, `.git/info/exclude`, the global `core.excludesFile`, and relevant IDE or tool ignore settings. Use `git check-ignore -v -- <path>` where it applies, and report the rule's source.
+3. Assess its origin from the file's birth and modification times, its contents, the relevant project and tool configuration, and narrowly relevant IDE or tool logs. A timestamp alone proves nothing. Do not read or expose unrelated sensitive log data.
+4. Report the evidence, your confidence and what remains uncertain, the impact on the current scope and status, and a recommended next action.
+5. While its origin is uncertain, leave the file unchanged and wait for the owner's decision before any change that could lose it.
+
+An out-of-scope path is reported as out of scope. Never delete it, regenerate it, or alter ignore rules to make `status` pass. Files this session demonstrably created are not covered.
+
 ## Close
 
 Follow the Lifecycle and Closure sections of `changes/README.md`, which define the order, the evidence rules, and what to do after a fix. In addition:
