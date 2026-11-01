@@ -104,20 +104,54 @@ def worktree_packet(root: Path, change_id: str) -> dict[str, bytes]:
     return out
 
 
-def tree_packet(root: Path, commit: str, change_id: str) -> dict[str, bytes]:
+class Objects:
+    """One `git cat-file --batch` process for every object a run reads."""
+
+    def __init__(self, root: Path):
+        self.proc = subprocess.Popen(
+            ["git", "cat-file", "--batch"], cwd=root, stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.DEVNULL
+        )
+
+    def read(self, spec: str) -> tuple[str, bytes] | None:
+        self.proc.stdin.write(spec.encode() + b"\n")
+        self.proc.stdin.flush()
+        header = self.proc.stdout.readline()
+        if not header:
+            raise GitError(f"git cat-file --batch stopped at {spec}")
+        if header.endswith((b" missing\n", b" ambiguous\n")):
+            return None
+        _oid, kind, size = header.split()
+        data = self.proc.stdout.read(int(size))
+        self.proc.stdout.read(1)
+        return kind.decode(), data
+
+    def blob(self, spec: str) -> bytes | None:
+        found = self.read(spec)
+        return found[1] if found and found[0] == "blob" else None
+
+    def close(self) -> None:
+        self.proc.stdin.close()
+        self.proc.stdout.close()
+        self.proc.wait()
+
+
+def tree_packet(ctx: Context, commit: str, change_id: str) -> dict[str, bytes]:
     prefix = f"{CHANGES}/{change_id}/"
-    listing = git(root, "ls-tree", "-r", "-z", commit, "--", prefix)
+    listing = git(ctx.root, "ls-tree", "-r", "-z", commit, "--", prefix)
     out = {}
     for entry in filter(None, listing.split("\0")):
         meta, path = entry.split("\t", 1)
         _mode, kind, oid = meta.split()
         if kind == "blob":
-            out[path[len(prefix):]] = git(root, "cat-file", "blob", oid, binary=True)
+            data = ctx.objects.blob(oid)
+            if data is None:
+                raise GitError(f"object {oid} of {path} is missing")
+            out[path[len(prefix):]] = data
     return out
 
 
-def tree_file(root: Path, commit: str, path: str) -> bytes | None:
-    return git(root, "cat-file", "blob", f"{commit}:{path}", binary=True, check=False)
+def tree_file(ctx: Context, commit: str, path: str) -> bytes | None:
+    return ctx.objects.blob(f"{commit}:{path}")
 
 
 # --------------------------------------------------------------------------
@@ -172,6 +206,18 @@ class Context:
     head: str | None = None
     _shallow: bool | None = None
     _baseline_ref: str | None | bool = False
+    _objects: Objects | None = None
+
+    @property
+    def objects(self) -> Objects:
+        if self._objects is None:
+            self._objects = Objects(self.root)
+        return self._objects
+
+    def close(self) -> None:
+        if self._objects is not None:
+            self._objects.close()
+            self._objects = None
 
     @property
     def shallow(self) -> bool:
@@ -521,12 +567,11 @@ def validate_closure(st: ChangeStatus, closure, carried: set) -> bool:
 def find_closure_anchor(ctx: Context, change_id: str) -> str | None:
     """Newest first-parent commit that introduces the closure.json on the baseline branch's tip."""
     path = f"{CHANGES}/{change_id}/{CLOSURE}"
-    if tree_file(ctx.root, ctx.baseline_ref, path) is None:
+    if tree_file(ctx, ctx.baseline_ref, path) is None:
         return None
     log = git(ctx.root, "log", "--first-parent", "--format=%H", ctx.baseline_ref, "--", path)
     for commit in log.split():
-        parent = git(ctx.root, "rev-parse", "--verify", "--quiet", commit + "^1", check=False)
-        if tree_file(ctx.root, commit, path) is not None and (not parent or tree_file(ctx.root, parent.strip(), path) is None):
+        if tree_file(ctx, commit, path) is not None and tree_file(ctx, f"{commit}^1", path) is None:
             return commit
     return None
 
@@ -561,7 +606,7 @@ def check_closure(ctx, st: ChangeStatus, data, present, chain, approved_at):
 
 
 def check_anchored_closure(ctx: Context, st: ChangeStatus, anchor: str, carried: set) -> None:
-    anchored = tree_packet(ctx.root, anchor, st.id)
+    anchored = tree_packet(ctx, anchor, st.id)
     try:
         closure = json.loads(anchored[CLOSURE])
     except (KeyError, json.JSONDecodeError):
@@ -573,7 +618,7 @@ def check_anchored_closure(ctx: Context, st: ChangeStatus, anchor: str, carried:
         ok = False
         st.add("error", "closure-invalid", f"packet digest does not match the packet at anchor {anchor[:12]}")
     for name in sorted(carried):
-        root_bytes = tree_file(ctx.root, anchor, name)
+        root_bytes = tree_file(ctx, anchor, name)
         if ok and (root_bytes is None or sha256_bytes(root_bytes) != closure["baseline"][name]):
             ok = False
             st.add("error", "closure-invalid", f"root {name} at anchor {anchor[:12]} does not match the closure baseline digest")
@@ -1160,7 +1205,10 @@ def pull_request_failures(st: ChangeStatus, paths: list[str]) -> list[str]:
 def compute_status(ctx: Context, args) -> dict:
     ids = change_ids(ctx.root)
     active = resolve_active(ctx, args.change, read_pr_body(args), args.branch, ids)
-    statuses = {cid: evaluate_change(ctx, cid) for cid in ids}
+    try:
+        statuses = {cid: evaluate_change(ctx, cid) for cid in ids}
+    finally:
+        ctx.close()
     result = {"active": None, "active_source": active.source, "identity_errors": active.errors, "changed_paths": []}
     if active.id in statuses:
         result["active"] = active.id

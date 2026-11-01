@@ -535,7 +535,9 @@ class Closure(RepoCase):
         self.packet("imp", kind="repository")
         (self.root / "changes/imp/link").symlink_to("plan.md")
         head = self.commit("packet")
-        self.assertEqual(repo.worktree_packet(self.root, "imp"), repo.tree_packet(self.root, head, "imp"))
+        ctx = repo.Context(root=self.root)
+        self.addCleanup(ctx.close)
+        self.assertEqual(repo.worktree_packet(self.root, "imp"), repo.tree_packet(ctx, head, "imp"))
 
     def test_a_branch_behind_the_baseline_is_told_so(self):
         self.establish_baseline()
@@ -879,8 +881,10 @@ class BatchedReads(RepoCase):
         sys.path.insert(0, str(REPO_PY.parent))
         import repo  # noqa: E402
 
+        ctx = repo.Context(root=self.root)
+        self.addCleanup(ctx.close)
         with mock.patch.dict(os.environ, support.GIT_ENV):
-            return repo.find_closure_anchor(repo.Context(root=self.root), cid)
+            return repo.find_closure_anchor(ctx, cid)
 
     def assertFrozenAt(self, anchor, cid="alpha"):
         change = self.status()["by_id"][cid]
@@ -997,6 +1001,18 @@ class BatchedReads(RepoCase):
         proc = self.run_repo("status", "--json", "--ci")
         self.assertIn("UnicodeDecodeError", proc.stderr)
         self.assertNotEqual(proc.returncode, 0)
+
+    def test_the_object_process_exits_when_closed(self):
+        sys.path.insert(0, str(REPO_PY.parent))
+        import repo  # noqa: E402
+
+        ctx = repo.Context(root=self.root)
+        proc = ctx.objects.proc
+        self.assertEqual(ctx.objects.read("HEAD")[0], "commit")
+        self.assertIsNone(ctx.objects.read("HEAD:no such file"))
+        ctx.close()
+        self.assertEqual(proc.returncode, 0)
+        ctx.close()
 
     def test_tampering_after_the_anchor_is_seen(self):
         self.closed()
