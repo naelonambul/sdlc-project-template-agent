@@ -16,7 +16,7 @@ The current stage is enforced by the ruleset, not by habit: with one required ap
 
 The one rule this imposes on the agent: **the bot makes the last push.** A pull-request author cannot approve their own pull request, and the approver cannot be the last pusher. Because the bot authors and last-pushes, the owner can approve. If the owner has to push after the agent, the agent pushes once more afterwards, with a real change such as refreshed closure evidence, before the owner reviews.
 
-A session that pushes under the owner's own token (for example a cloud session without the App) breaks that rule: the owner is then the author and cannot approve. Merge such a pull request without a GitHub approval, as the owner, or let the bot push last.
+CI enforces the author. When the repository variable `AGENT_LOGIN` is set, the `identity` job fails any pull request not authored by that login, and with it `summary`. A session that pushes under the owner's own token breaks the last-push rule: the owner is then the last pusher and cannot approve. Let the bot push last. To work without the agent, the owner clears the variable, which disables the check.
 
 ## Merge policy
 
@@ -94,7 +94,13 @@ The wrappers are for a host where the owner's login stays on plain `git` and `gh
 
 Have `agent-gh` cover `pr checks`, read-only `run list` and read-only run logs, which the App's Actions permission allows. Otherwise the owner has to confirm the post-merge `push` run and supply the failed lines when CI is red.
 
-This is a rule for the agent, not a control. Nothing here stops a session from using the owner's login, so `repo.py approve` claims, the required checks and the owner's review stay the gates.
+The command path is a rule for the agent, and CI checks its result. Set `AGENT_LOGIN` to the App's login once the App exists; this is a required step for a repository with an agent identity:
+
+```sh
+gh variable set AGENT_LOGIN --body '<app-slug>[bot]' --repo OWNER/REPO
+```
+
+Unset, the `identity` job passes with a notice. The check covers the pull request's author. It does not cover commits, or a session that only reads with the owner's login, so `repo.py approve` claims and the owner's review stay gates.
 
 ## Read-only host check
 
@@ -106,6 +112,7 @@ gh api repos/OWNER/REPO/rules/branches/main --jq '[.[].type] | sort'
 gh api repos/OWNER/REPO/rulesets --jq '.[] | {id, name, enforcement}'
 gh api repos/OWNER/REPO/rulesets/ID --jq '{bypass_actors, rules}'
 gh api repos/OWNER/REPO --jq '{allow_squash_merge, allow_merge_commit, allow_rebase_merge}'
+gh variable get AGENT_LOGIN --repo OWNER/REPO
 ```
 
 Expect the ruleset's `enforcement` to be `active` with empty `bypass_actors`, `summary` among its required status checks, the approval count that matches the current stage, and the repository merge settings to allow squash only. Classic branch protection shows up in `rules/branches/main` as an empty list; check it in the UI instead.

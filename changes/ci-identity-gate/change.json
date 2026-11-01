@@ -1,0 +1,26 @@
+{
+  "schema": 1,
+  "id": "ci-identity-gate",
+  "kind": "repository",
+  "title": "fail a pull request not authored by the agent identity",
+  "base": {
+    "ref": "main",
+    "commit": "07feeddbe73deeefe052caa97b4a0d0d51ee3b07"
+  },
+  "baseline": {},
+  "write_scope": [
+    ".github/workflows/repository.yml",
+    "scripts/tests/test_workflow.py",
+    "docs/host-setup.md"
+  ],
+  "approvals": [
+    {
+      "artifact": "plan.md",
+      "sha256": "sha256:ff9a52af533f9f6c78fdc23e279b04f68a38e12069d34ba69092b82625f1cd97",
+      "by": "naelonambul",
+      "at": "2026-11-01T06:15:44Z",
+      "write_scope_sha256": "sha256:da2f8c299e47b36c6215d5d63dd0be93aa59350316a7ca8eadb748753f21a040",
+      "note": "Owner in session: '\uc2b9\uc778'"
+    }
+  ]
+}

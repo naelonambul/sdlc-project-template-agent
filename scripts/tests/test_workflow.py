@@ -50,6 +50,12 @@ class WorkflowInvariants(unittest.TestCase):
         self.assertEqual({n.strip() for n in needs.split(",")}, set(self.jobs) - {"summary"})
         self.assertIn('v["result"] == "success"', self.text)
 
+    def test_identity_job_compares_the_author_with_the_variable(self):
+        self.assertIn("identity", self.jobs)
+        self.assertIn("AGENT_LOGIN: ${{ vars.AGENT_LOGIN }}", self.text)
+        self.assertIn("PR_AUTHOR: ${{ github.event.pull_request.user.login }}", self.text)
+        self.assertIn('[ "$PR_AUTHOR" != "$AGENT_LOGIN" ]', self.text)
+
     def test_every_check_group_is_run(self):
         groups = {c.get("group", "core") for c in json.loads((ROOT / "checks.json").read_text())["checks"]}
         wired = set(re.findall(r"repo\.py verify --group (\S+)", self.text))
