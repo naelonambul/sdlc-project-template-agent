@@ -92,10 +92,12 @@ def packet_digest(files: dict[str, bytes]) -> str:
     return "sha256:" + h.hexdigest()
 
 
-def worktree_packet(root: Path, change_id: str) -> dict[str, bytes]:
+def worktree_packet(root: Path, change_id: str, listing: list[str] | None = None) -> dict[str, bytes]:
     prefix = f"{CHANGES}/{change_id}/"
     out = {}
-    for rel in sorted(set(git_paths(root, "ls-files", "-co", "--exclude-standard", "-z", "--", prefix))):
+    if listing is None:
+        listing = git_paths(root, "ls-files", "-co", "--exclude-standard", "-z", "--", prefix)
+    for rel in sorted(set(listing)):
         path = root / rel
         if path.is_symlink():
             out[rel[len(prefix):]] = os.readlink(path).encode()
@@ -207,6 +209,17 @@ class Context:
     _shallow: bool | None = None
     _baseline_ref: str | None | bool = False
     _objects: Objects | None = None
+    _packet_paths: dict[str, list[str]] | None = None
+
+    def packet_paths(self, change_id: str) -> list[str]:
+        """A packet's paths, listed once per run because `status` never writes to the worktree."""
+        if self._packet_paths is None:
+            self._packet_paths = {}
+            for rel in git_paths(self.root, "ls-files", "-co", "--exclude-standard", "-z", "--", f"{CHANGES}/"):
+                parts = rel.split("/")
+                if len(parts) > 2:
+                    self._packet_paths.setdefault(parts[1], []).append(rel)
+        return self._packet_paths.get(change_id, [])
 
     @property
     def objects(self) -> Objects:
@@ -622,7 +635,7 @@ def check_anchored_closure(ctx: Context, st: ChangeStatus, anchor: str, carried:
         if ok and (root_bytes is None or sha256_bytes(root_bytes) != closure["baseline"][name]):
             ok = False
             st.add("error", "closure-invalid", f"root {name} at anchor {anchor[:12]} does not match the closure baseline digest")
-    current = worktree_packet(ctx.root, st.id)
+    current = worktree_packet(ctx.root, st.id, ctx.packet_paths(st.id))
     if current != anchored:
         changed = sorted(set(current) ^ set(anchored) | {k for k in current if k in anchored and current[k] != anchored[k]})
         st.add("error", "frozen-integrity", f"closed packet changed after closure anchor {anchor[:12]}: {changed}")
