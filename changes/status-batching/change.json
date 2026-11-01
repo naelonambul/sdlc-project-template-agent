@@ -1,0 +1,24 @@
+{
+  "schema": 1,
+  "id": "status-batching",
+  "kind": "repository",
+  "title": "batch git reads in status without changing its results",
+  "base": {
+    "ref": "main",
+    "commit": "1bb1ff687b839e0b7f7aad8d53106d6f33647f4e"
+  },
+  "baseline": {},
+  "write_scope": [
+    "scripts/repo.py",
+    "scripts/tests/test_status.py"
+  ],
+  "approvals": [
+    {
+      "artifact": "plan.md",
+      "sha256": "sha256:92b4e3570ca2de59db6e66d9b717e292cf5702fdbfc1d2be86c58a451a5ca0a9",
+      "by": "naelonambul",
+      "at": "2026-11-01T02:27:41Z",
+      "write_scope_sha256": "sha256:fe2ff537fb14c918c6ab87f316d9f080823755601a3e0ca9cc9e870ec88e5b29"
+    }
+  ]
+}

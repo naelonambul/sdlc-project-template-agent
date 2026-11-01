@@ -4,10 +4,15 @@ import contextlib
 import io
 import json
 import os
+import shutil
 import subprocess
 import sys
+import tempfile
 import unittest
+from pathlib import Path
+from unittest import mock
 
+from scripts.tests import support
 from scripts.tests.support import REPO_PY, UNESTABLISHED, RepoCase, digest
 
 
@@ -530,7 +535,9 @@ class Closure(RepoCase):
         self.packet("imp", kind="repository")
         (self.root / "changes/imp/link").symlink_to("plan.md")
         head = self.commit("packet")
-        self.assertEqual(repo.worktree_packet(self.root, "imp"), repo.tree_packet(self.root, head, "imp"))
+        ctx = repo.Context(root=self.root)
+        self.addCleanup(ctx.close)
+        self.assertEqual(repo.worktree_packet(self.root, "imp"), repo.tree_packet(ctx, head, "imp"))
 
     def test_a_branch_behind_the_baseline_is_told_so(self):
         self.establish_baseline()
@@ -858,6 +865,174 @@ class PullRequestGate(RepoCase):
         self.commit("closed")
         result = self.pr()
         self.assertTrue(result["ok"], result["failures"])
+
+
+class BatchedReads(RepoCase):
+    """Anchors and packets are read in one pass, and mean what per-packet git commands meant."""
+
+    def closed(self, cid="alpha", write=None):
+        self.packet(cid, kind="repository")
+        self.approve(cid, "plan.md")
+        if write:
+            write()
+        self.close(cid)
+
+    def anchor(self, cid="alpha"):
+        sys.path.insert(0, str(REPO_PY.parent))
+        import repo  # noqa: E402
+
+        ctx = repo.Context(root=self.root)
+        self.addCleanup(ctx.close)
+        with mock.patch.dict(os.environ, support.GIT_ENV):
+            return repo.find_closure_anchor(ctx, cid)
+
+    def assertFrozenAt(self, anchor, cid="alpha"):
+        change = self.status()["by_id"][cid]
+        self.assertEqual((change["closure"], change["closure_anchor"]), ("frozen", anchor))
+
+    def test_closure_in_the_root_commit_anchors_there(self):
+        self.git("update-ref", "-d", "HEAD")
+        self.closed()
+        self.assertFrozenAt(self.commit("root with a closure"))
+
+    def test_merge_commit_anchors_on_the_first_parent(self):
+        self.git("switch", "-q", "-c", "change/alpha")
+        self.closed()
+        self.commit("closed on the side branch")
+        self.git("switch", "-q", "main")
+        self.git("merge", "-q", "--no-ff", "-m", "merge alpha", "change/alpha")
+        self.assertFrozenAt(self.git("rev-parse", "HEAD"))
+
+    def test_a_newer_side_commit_is_not_on_the_first_parent_chain(self):
+        self.git("switch", "-q", "-c", "side")
+        self.closed()
+        with mock.patch.dict(os.environ, {"GIT_COMMITTER_DATE": "2099-01-01T00:00:00Z"}):
+            self.commit("closed later, on the side")
+        self.git("switch", "-q", "main")
+        self.git("clean", "-fdq")
+        self.closed()
+        anchor = self.commit("closed on main")
+        self.git("merge", "-q", "--no-commit", "-s", "ours", "side")
+        closure = json.loads(self.read("changes/alpha/closure.json"))
+        self.write("changes/alpha/closure.json", json.dumps({**closure, "evidence": ["differs from both parents"]}))
+        self.commit("merge side with a third closure")
+        self.assertEqual(self.anchor(), anchor)
+
+    def test_a_renamed_packet_anchors_at_the_rename(self):
+        self.closed()
+        (self.root / "changes/alpha").rename(self.root / "changes/beta")
+        self.commit("under another name")
+        (self.root / "changes/beta").rename(self.root / "changes/alpha")
+        self.assertFrozenAt(self.commit("rename"))
+
+    def test_a_copied_closure_anchors_at_the_copy(self):
+        self.closed()
+        (self.root / "changes/alpha").rename(self.root / "changes/beta")
+        self.commit("under another name")
+        shutil.copytree(self.root / "changes/beta", self.root / "changes/alpha")
+        self.assertFrozenAt(self.commit("copy"))
+
+    def test_a_closure_deleted_at_the_tip_has_no_anchor(self):
+        self.closed()
+        self.commit("closed")
+        self.git("switch", "-q", "-c", "keep")
+        self.git("switch", "-q", "main")
+        self.git("rm", "-q", "changes/alpha/closure.json")
+        self.commit("delete on main")
+        self.git("switch", "-q", "keep")
+        self.assertIsNone(self.anchor())
+        self.assertIsNone(self.status()["by_id"]["alpha"]["closure_anchor"])
+
+    def test_delete_and_re_add_anchors_at_the_re_add(self):
+        self.closed()
+        self.commit("closed")
+        closure = self.read("changes/alpha/closure.json")
+        self.git("rm", "-q", "changes/alpha/closure.json")
+        self.commit("delete")
+        self.write("changes/alpha/closure.json", closure)
+        self.assertFrozenAt(self.commit("re-add"))
+
+    def test_a_later_edit_does_not_move_the_anchor(self):
+        self.closed()
+        anchor = self.commit("closed")
+        path = self.root / "changes/alpha/closure.json"
+        path.write_text(path.read_text() + "\n")
+        self.commit("edit the closure")
+        self.assertEqual(self.anchor(), anchor)
+
+    def test_a_gitlink_at_the_closure_path_is_no_closure(self):
+        self.packet("alpha", kind="repository")
+        head = self.commit("packet")
+        self.git("update-index", "--add", "--cacheinfo", f"160000,{head},changes/alpha/closure.json")
+        self.git("commit", "-q", "-m", "gitlink")
+        self.assertIsNone(self.anchor())
+
+    def test_a_gitlink_inside_a_closed_packet_is_skipped(self):
+        self.packet("alpha", kind="repository")
+        self.approve("alpha", "plan.md")
+        head = self.commit("packet")
+        self.git("update-index", "--add", "--cacheinfo", f"160000,{head},changes/alpha/vendor")
+        self.close("alpha")
+        self.git("add", "changes/alpha/closure.json")
+        self.git("commit", "-q", "-m", "closed")
+        self.assertFrozenAt(self.git("rev-parse", "HEAD"))
+
+    def test_a_symlink_closure_is_a_closure(self):
+        self.packet("alpha", kind="repository")
+        (self.root / "changes/alpha/closure.json").symlink_to("plan.md")
+        self.assertEqual(self.commit("symlink"), self.anchor())
+
+    def test_a_directory_at_the_closure_path_is_no_closure(self):
+        self.packet("alpha", kind="repository")
+        self.write("changes/alpha/closure.json/inner", "x\n")
+        self.commit("directory")
+        self.assertIsNone(self.anchor())
+
+    def test_nested_and_non_ascii_names_stay_frozen(self):
+        self.closed(write=lambda: self.write('changes/alpha/sub dir/niño "q".md', "n\n"))
+        self.assertFrozenAt(self.commit("closed"))
+
+    def test_a_non_utf8_name_in_a_closed_packet_fails_as_a_crash(self):
+        self.closed()
+        oid = self.git("hash-object", "-w", "changes/alpha/plan.md")
+        self.git("update-index", "--add", "--cacheinfo", f"100644,{oid},changes/alpha/bad\udcff.txt")
+        self.git("add", "changes/alpha/closure.json")
+        self.git("commit", "-q", "-m", "closed")
+        proc = self.run_repo("status", "--json", "--ci")
+        self.assertIn("UnicodeDecodeError", proc.stderr)
+        self.assertNotEqual(proc.returncode, 0)
+
+    def test_the_object_process_exits_when_closed(self):
+        sys.path.insert(0, str(REPO_PY.parent))
+        import repo  # noqa: E402
+
+        ctx = repo.Context(root=self.root)
+        proc = ctx.objects.proc
+        self.assertEqual(ctx.objects.read("HEAD")[0], "commit")
+        self.assertIsNone(ctx.objects.read("HEAD:no such file"))
+        ctx.close()
+        self.assertEqual(proc.returncode, 0)
+        ctx.close()
+
+    def test_tampering_after_the_anchor_is_seen(self):
+        self.closed()
+        self.commit("closed")
+        self.write("changes/alpha/added.md", "x\n")
+        self.assertFailed(self.status(), "closed packet changed after closure anchor")
+
+
+class BatchedReadsUnderHostileConfig(BatchedReads):
+    """A user's git configuration cannot change what the batched commands report."""
+
+    def setUp(self):
+        tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(tmp.cleanup)
+        config = Path(tmp.name) / "gitconfig"
+        config.write_text("[log]\n\tshowRoot = false\n\tdiffMerges = separate\n[diff]\n\trenames = copies\n\tignoreSubmodules = all\n")
+        patcher = mock.patch.dict(support.GIT_ENV, {"GIT_CONFIG_GLOBAL": str(config)})
+        patcher.start()
+        self.addCleanup(patcher.stop)
+        super().setUp()
 
 
 if __name__ == "__main__":
