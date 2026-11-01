@@ -1,0 +1,27 @@
+{
+  "schema": 1,
+  "id": "workflow-change-handoff",
+  "kind": "repository",
+  "title": "Define the owner handoff for workflow changes",
+  "base": {
+    "ref": "main",
+    "commit": "673ec7b69e4d7a31f00fd00471eb405f07408585"
+  },
+  "baseline": {},
+  "write_scope": [
+    "docs/host-setup.md",
+    "docs/agent-surfaces.md",
+    ".agents/skills/sdlc-artifacts/SKILL.md",
+    ".agents/skills/repository-quality/SKILL.md"
+  ],
+  "approvals": [
+    {
+      "artifact": "plan.md",
+      "sha256": "sha256:bc65684036eec57af64c94473fb6fc017d2e55846d44e5c0c1622127cca04ba4",
+      "by": "naelonambul",
+      "at": "2026-11-01T14:20:25Z",
+      "write_scope_sha256": "sha256:bc996f109c1f83af82bc8d07532ca4b3ab86311f29bef4b73bb5e269d8d98918",
+      "note": "\uc2b9\uc778"
+    }
+  ]
+}

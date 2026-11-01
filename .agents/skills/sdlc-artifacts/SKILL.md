@@ -66,6 +66,7 @@ Follow the Lifecycle and Closure sections of `changes/README.md`, which define t
 - When the change touches `AGENTS.md`, a skill or the guard, run the probes in `docs/agent-surfaces.md` once and record the result there.
 - `git add` the new `closure.json`; `commit -a` does not pick up new files.
 - Make the last push yourself: the owner can approve only a pull request the agent identity authored and pushed last (`docs/host-setup.md`).
+- A change that touches `.github/workflows/**` needs one owner push before yours; follow "Workflow changes" in `docs/host-setup.md`.
 
 ### When CI is red
 
@@ -74,6 +75,6 @@ Read the failure before changing anything, under the agent's own identity and ne
 - **In the diff's own code:** reproduce it with `repo.py verify --change <id>`, then fix it.
 - **In code the diff never touched:** check whether the branch is behind the baseline with `git merge-base --is-ancestor`. If it is, update the branch, not the code that failed.
 - **Flake or infrastructure:** the App cannot rerun a job, because its Actions permission is read-only, so ask the owner for one rerun. An identical second failure is not a flake; read the logs again and reclassify.
-- **In `.github/workflows/**`:** hand it to the owner, because the App cannot push there.
+- **In `.github/workflows/**`:** the App cannot push there. Follow "Workflow changes" in `docs/host-setup.md`.
 
 Any new commit changes the tree, so rerun `repo.py verify --change <id> --full` and `close` before pushing again. Never weaken a check to get a green run, and green does not replace the owner's review.
