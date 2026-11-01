@@ -76,6 +76,8 @@ The `workspace-write` sandbox keeps `.git` read-only, so Codex cannot commit in 
 | 2026-11-01 | Codex CLI 0.166.0 | same scratch copy, `codex exec --skip-git-repo-check --sandbox read-only` | yes | 4/4 core skills |
 | 2026-11-01 | Claude Code CLI 2.1.316 | changed `AGENTS.md` and `sdlc-artifacts` identity text; no `CLAUDE.md`, adapters present; probes run non-interactively in a scratch copy | yes (no, with a shadowing `CLAUDE.md`) | 4/4 core skills |
 | 2026-11-01 | Codex CLI 0.166.0 | same scratch copy, `codex exec --skip-git-repo-check --sandbox read-only` | yes | 4/4 core skills |
+| 2026-11-01 | Claude Code CLI 2.1.316 | changed `AGENTS.md` and `sdlc-artifacts` pre-existing file text; no `CLAUDE.md`, adapters present; probes run non-interactively in a scratch copy | yes (no, with a shadowing `CLAUDE.md`) | 4/4 core skills |
+| 2026-11-01 | Codex CLI 0.166.0 | same scratch copy, `codex exec --skip-git-repo-check --sandbox read-only` | yes | 4/4 core skills |
 
 The desktop app is **not verified**. Re-run the procedure below from a desktop session before claiming support. No other agent surface has been tested. Cursor is not a target.
 

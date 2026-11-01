@@ -1,0 +1,26 @@
+{
+  "schema": 1,
+  "id": "local-file-provenance",
+  "kind": "repository",
+  "title": "investigate pre-existing local files before changing them",
+  "base": {
+    "ref": "main",
+    "commit": "cbb22f75002dc1653c2c5ddcee3dc683b7fdcd56"
+  },
+  "baseline": {},
+  "write_scope": [
+    "AGENTS.md",
+    ".agents/skills/sdlc-artifacts/SKILL.md",
+    "docs/agent-surfaces.md"
+  ],
+  "approvals": [
+    {
+      "artifact": "plan.md",
+      "sha256": "sha256:c44ae49fdb3bdd4959e347df7b81e211d3ef4bcbb1f5e2f0fd0d6e81cf23091e",
+      "by": "naelonambul",
+      "at": "2026-11-01T06:06:43Z",
+      "write_scope_sha256": "sha256:7d1d8e00d7ea7232e076bd97a6a143b580988fe0389ac1a0ab848b40f031bfa4",
+      "note": "Owner in session: '\uc2b9\uc778'"
+    }
+  ]
+}
