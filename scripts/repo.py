@@ -210,6 +210,22 @@ class Context:
     _baseline_ref: str | None | bool = False
     _objects: Objects | None = None
     _packet_paths: dict[str, list[str]] | None = None
+    _closure_commits: dict[str, list[str]] | None = None
+
+    @property
+    def closure_commits(self) -> dict[str, list[str]]:
+        """closure.json path -> first-parent commits that touch it, newest first."""
+        if self._closure_commits is None:
+            log = git(
+                self.root, "log", "--first-parent", "-m", "--root", "--no-renames", "--name-only", "--format=%x00%H",
+                self.baseline_ref, "--", f":(glob){CHANGES}/*/{CLOSURE}",
+            )
+            self._closure_commits = {}
+            for record in filter(None, log.split("\0")):
+                commit, *paths = record.split("\n")
+                for path in set(filter(None, paths)):
+                    self._closure_commits.setdefault(path, []).append(commit)
+        return self._closure_commits
 
     def packet_paths(self, change_id: str) -> list[str]:
         """A packet's paths, listed once per run because `status` never writes to the worktree."""
@@ -582,8 +598,7 @@ def find_closure_anchor(ctx: Context, change_id: str) -> str | None:
     path = f"{CHANGES}/{change_id}/{CLOSURE}"
     if tree_file(ctx, ctx.baseline_ref, path) is None:
         return None
-    log = git(ctx.root, "log", "--first-parent", "--format=%H", ctx.baseline_ref, "--", path)
-    for commit in log.split():
+    for commit in ctx.closure_commits.get(path, []):
         if tree_file(ctx, commit, path) is not None and tree_file(ctx, f"{commit}^1", path) is None:
             return commit
     return None
