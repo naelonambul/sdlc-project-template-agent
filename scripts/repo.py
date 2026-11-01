@@ -138,17 +138,30 @@ class Objects:
 
 
 def tree_packet(ctx: Context, commit: str, change_id: str) -> dict[str, bytes]:
-    prefix = f"{CHANGES}/{change_id}/"
-    listing = git(ctx.root, "ls-tree", "-r", "-z", commit, "--", prefix)
+    oid_size = len(commit) // 2
     out = {}
-    for entry in filter(None, listing.split("\0")):
-        meta, path = entry.split("\t", 1)
-        _mode, kind, oid = meta.split()
-        if kind == "blob":
-            data = ctx.objects.blob(oid)
-            if data is None:
-                raise GitError(f"object {oid} of {path} is missing")
-            out[path[len(prefix):]] = data
+    pending = [("", f"{commit}:{CHANGES}/{change_id}")]
+    while pending:
+        prefix, spec = pending.pop()
+        found = ctx.objects.read(spec)
+        if found is None and prefix:
+            raise GitError(f"tree {spec} is missing")
+        if found is None or found[0] != "tree":
+            continue
+        data, at = found[1], 0
+        while at < len(data):
+            space = data.index(b" ", at)
+            nul = data.index(b"\0", space)
+            mode, name = data[at:space], prefix + data[space + 1:nul].decode()
+            oid = data[nul + 1:nul + 1 + oid_size].hex()
+            at = nul + 1 + oid_size
+            if mode == b"40000":
+                pending.append((f"{name}/", oid))
+            elif mode != b"160000":
+                blob = ctx.objects.blob(oid)
+                if blob is None:
+                    raise GitError(f"object {oid} of {name} is missing")
+                out[name] = blob
     return out
 
 
