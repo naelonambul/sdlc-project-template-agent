@@ -1,0 +1,18 @@
+{
+  "schema": 1,
+  "id": "parallel-tests",
+  "kind": "repository",
+  "title": "Run the control-plane tests in parallel shards",
+  "base": {
+    "ref": "main",
+    "commit": "d851222d6e2bbe33e771a7a7bbf30759318f52bf"
+  },
+  "baseline": {},
+  "write_scope": [
+    "scripts/tests/run.py",
+    "scripts/tests/test_run.py",
+    "checks.json",
+    "scripts/README.md"
+  ],
+  "approvals": []
+}
