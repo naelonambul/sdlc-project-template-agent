@@ -4,13 +4,10 @@ from __future__ import annotations
 
 import json
 import os
-import subprocess
-import sys
 import tempfile
 import unittest
 from pathlib import Path
 
-from scripts.tests import support
 from scripts.tests.support import RepoCase
 
 GUARD = Path(__file__).resolve().parents[1] / "hooks" / "guard.py"
@@ -19,14 +16,7 @@ SETTINGS = Path(__file__).resolve().parents[2] / ".claude" / "settings.json"
 
 class GuardCase(RepoCase):
     def run_guard(self, *args, stdin=None, cwd=None):
-        return subprocess.run(
-            [sys.executable, str(GUARD), *args],
-            cwd=cwd or self.root,
-            env={**os.environ, **support.GIT_ENV},
-            input=stdin,
-            capture_output=True,
-            text=True,
-        )
+        return self.run_script(GUARD, args, stdin=stdin, cwd=cwd)
 
     def path(self, rel, proposed=None):
         args = ["path", rel]
