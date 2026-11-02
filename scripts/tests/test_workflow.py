@@ -9,6 +9,23 @@ ROOT = Path(__file__).resolve().parents[2]
 WORKFLOW = ROOT / ".github/workflows/repository.yml"
 
 
+def control_plane_job_findings(text: str, argv: list[str]) -> list[str]:
+    """Why the control-plane-tests job could pass without running the tests outside repo.py, or []."""
+    match = re.search(r"(?ms)^  control-plane-tests:\n(.*?)(?=^  [a-z0-9-]+:\n|\Z)", text)
+    if not match:
+        return ["no control-plane-tests job"]
+    block = "\n".join(re.sub(r"(^|\s)#.*$", "", line) for line in match.group(1).splitlines())
+    findings = []
+    runs = [r.strip() for r in re.findall(r"(?m)^\s+(?:- )?run:(.*)$", block)]
+    expected = ["python3 -m unittest scripts.tests.test_run", " ".join(argv)]
+    if runs != expected:
+        findings.append(f"run steps {runs} != {expected}")
+    for key in re.findall(r"(?m)^\s+(?:- )?(if|continue-on-error|working-directory):", block):
+        findings.append(f"step sets {key}:")
+    findings += [f"run step uses repo.py: {r}" for r in runs if "repo.py" in r]
+    return findings
+
+
 @unittest.skipUnless(WORKFLOW.is_file(), "repository has no CI workflow")
 class WorkflowInvariants(unittest.TestCase):
     @classmethod
@@ -55,6 +72,27 @@ class WorkflowInvariants(unittest.TestCase):
         self.assertIn("AGENT_LOGIN: ${{ vars.AGENT_LOGIN }}", self.text)
         self.assertIn("PR_AUTHOR: ${{ github.event.pull_request.user.login }}", self.text)
         self.assertIn('[ "$PR_AUTHOR" != "$AGENT_LOGIN" ]', self.text)
+
+    def test_control_plane_job_runs_the_registered_command_without_repo_py(self):
+        """The job's pass/fail must not depend on repo.py verify: fixed commands, and no way to mute a failure."""
+        argv = json.loads((ROOT / "checks.json").read_text())["checks"]
+        argv = next(c for c in argv if c["id"] == "control-plane")["argv"]
+        self.assertEqual(control_plane_job_findings(self.text, argv), [])
+        runner, unit = " ".join(argv), "python3 -m unittest scripts.tests.test_run"
+        mutations = {
+            "muted with || true": (f"run: {runner}", f"run: {runner} || true"),
+            "echoed": (f"run: {runner}", f"run: echo {runner}"),
+            "runner's own tests dropped": (f"      - run: {unit}\n", ""),
+            "step if": (f"      - run: {runner}", f"      - if: false\n        run: {runner}"),
+            "continue-on-error": (f"      - run: {runner}", f"      - continue-on-error: true\n        run: {runner}"),
+            "through repo.py": (f"run: {runner}", "run: python3 scripts/repo.py verify --group core"),
+        }
+        for name, (old, new) in mutations.items():
+            with self.subTest(name):
+                self.assertEqual(self.text.count(old), 1, old)
+                self.assertNotEqual(control_plane_job_findings(self.text.replace(old, new), argv), [])
+        with self.subTest("checks.json argv no longer matches"):
+            self.assertNotEqual(control_plane_job_findings(self.text, ["python3", "scripts/tests/other.py"]), [])
 
     def test_every_check_group_is_run(self):
         groups = {c.get("group", "core") for c in json.loads((ROOT / "checks.json").read_text())["checks"]}
