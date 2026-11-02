@@ -2,9 +2,11 @@
 
 from __future__ import annotations
 
+import atexit
 import hashlib
 import json
 import os
+import shutil
 import subprocess
 import sys
 import tempfile
@@ -21,6 +23,9 @@ GIT_ENV = {
     "GIT_CONFIG_GLOBAL": os.devnull,
     "GIT_CONFIG_NOSYSTEM": "1",
 }
+# Snapshot before any test patches GIT_ENV, so the shared template never sees a patch.
+DEFAULT_GIT_ENV = dict(GIT_ENV)
+_TEMPLATE: Path | None = None
 
 
 def digest(data: str | bytes) -> str:
@@ -29,18 +34,36 @@ def digest(data: str | bytes) -> str:
     return "sha256:" + hashlib.sha256(data).hexdigest()
 
 
+def _template() -> Path:
+    """The initial repository, built once per process under DEFAULT_GIT_ENV and copied per test."""
+    global _TEMPLATE
+    if _TEMPLATE is None:
+        tmp = tempfile.TemporaryDirectory()
+        atexit.register(tmp.cleanup)
+        root = Path(tmp.name) / "repo"
+        root.mkdir()
+        env = {**os.environ, **DEFAULT_GIT_ENV}
+
+        def git(*args):
+            subprocess.run(["git", *args], cwd=root, env=env, check=True, capture_output=True)
+
+        git("init", "-q", "-b", "main")
+        (root / "AGENTS.md").write_text("# Repository Agent Instructions\n")
+        (root / "intent.md").write_text(UNESTABLISHED + "# Intent\n")
+        (root / "spec.md").write_text(UNESTABLISHED + "# Specification\n")
+        git("add", "-A")
+        git("commit", "-q", "--allow-empty", "-m", "initial")
+        _TEMPLATE = root
+    return _TEMPLATE
+
+
 class RepoCase(unittest.TestCase):
     """Each test gets a fresh repository on `main` with an initial commit."""
 
     def setUp(self):
         self._tmp = tempfile.TemporaryDirectory()
         self.root = Path(self._tmp.name) / "repo"
-        self.root.mkdir()
-        self.git("init", "-q", "-b", "main")
-        self.write("AGENTS.md", "# Repository Agent Instructions\n")
-        self.write("intent.md", UNESTABLISHED + "# Intent\n")
-        self.write("spec.md", UNESTABLISHED + "# Specification\n")
-        self.commit("initial")
+        shutil.copytree(_template(), self.root, symlinks=True)
 
     def tearDown(self):
         self._tmp.cleanup()
