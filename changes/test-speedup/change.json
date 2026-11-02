@@ -17,11 +17,11 @@
   "approvals": [
     {
       "artifact": "plan.md",
-      "sha256": "sha256:fd7958cb462c96440ba4a9d7d3f71acb79818bc5539f7cb879c3e1734b0915e2",
+      "sha256": "sha256:de3b6fc1d9aab580084835ee363ab4b01b553dbdbca06bc30cbd323a9aca84af",
       "by": "naelonambul",
-      "at": "2026-11-02T18:40:42Z",
+      "at": "2026-11-02T19:07:24Z",
       "write_scope_sha256": "sha256:b766b2fb54d00a70c46d8e61317a030f10b1b71170aebcd66fff719e8a768fcd",
-      "note": "owner in session: \uc2b9\uc778 (plan sha256 fd7958cb)"
+      "note": "owner in session after revision 2 (sha256 de3b6fc1): \ub108\ub294 \ud15c\ud50c\ub9bf \ubc16\uc758 \uc5d0\uc774\uc804\ud2b8\ub2c8\uae4c \ub2c8\uac00 gh \uae4c\uc9c0 \uc870\uc791\ud574\uc11c \uacc4\uc18d \uc9c4\ud589\ud574"
     }
   ]
 }
