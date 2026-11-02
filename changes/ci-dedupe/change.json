@@ -15,11 +15,11 @@
   "approvals": [
     {
       "artifact": "plan.md",
-      "sha256": "sha256:030d99b2f4c50c97dcd8b350c05ad130d0cc6a81b9a4f71061dcf8710202b80e",
+      "sha256": "sha256:4d2bb8746d89d8e18987e5327870f9a3eaf957abda13b681725938cc786719b8",
       "by": "naelonambul",
-      "at": "2026-11-02T22:58:18Z",
+      "at": "2026-11-02T23:18:43Z",
       "write_scope_sha256": "sha256:690cea5a7f10583802b866cb1fe6c4b132dfbcea7062e5ce16464eaa325764db",
-      "note": "Owner in session: \"\uc2b9\uc778\" (approving the ci-dedupe plan draft, commit 0acb388, sha256 030d99b2...)"
+      "note": "Owner in session: \"\uc2b9\uc778\" (approving ci-dedupe plan revision 2, commit d8937ca, sha256 4d2bb874...)"
     }
   ]
 }
