@@ -158,6 +158,23 @@ class Runner(unittest.TestCase):
         self.assertEqual(proc.returncode, 0, proc.stdout)
         self.assertRegex(self.summary(proc), r"^OK: ran 1 tests")
 
+    def test_output_after_the_summary_is_allowed(self):
+        """Warnings printed at interpreter shutdown follow the summary; the shard still passes on its result."""
+        self.module("test_atexit", """
+            import atexit
+            import sys
+            import unittest
+
+            atexit.register(lambda: sys.stderr.write("ResourceWarning: printed at shutdown\\n"))
+
+            class Late(unittest.TestCase):
+                def test_ok(self):
+                    pass
+            """)
+        proc = self.run_runner()
+        self.assertEqual(proc.returncode, 0, proc.stdout)
+        self.assertRegex(self.summary(proc), r"^OK: ran 1 tests")
+
     def test_killed_shard_fails_the_run(self):
         self.module("test_kill", """
             import os

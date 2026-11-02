@@ -72,18 +72,20 @@ def run_shard(ids: list[str], top: Path, env: dict) -> tuple[subprocess.Complete
 def parse(stderr: str) -> tuple[int | None, dict[str, int], str | None]:
     """The run count and result counts of unittest's closing summary, or why there is none.
 
-    The summary must be the end of stderr ("Ran N tests in Xs", a blank line, "OK"/"FAILED (...)"),
-    and stderr must contain exactly one line of each shape, so test output cannot stand in for it.
+    stderr must contain exactly one line of each shape, as one block ("Ran N tests in Xs", a blank
+    line, "OK"/"FAILED (...)"), so test output cannot stand in for it. Lines after the block, such as
+    warnings printed at interpreter shutdown, are allowed and shown when the shard fails.
     """
     lines = stderr.rstrip().splitlines()
-    ran_lines = [m for m in map(RAN.match, lines) if m]
-    status_lines = [m for m in map(STATUS.match, lines) if m]
-    if not ran_lines and not status_lines:
+    ran_at = [i for i, line in enumerate(lines) if RAN.match(line)]
+    status_at = [i for i, line in enumerate(lines) if STATUS.match(line)]
+    if not ran_at and not status_at:
         return None, {}, "no test summary"
-    if len(ran_lines) != 1 or len(status_lines) != 1:
+    if len(ran_at) != 1 or len(status_at) != 1:
         return None, {}, "ambiguous test summary"
-    if len(lines) < 3 or not RAN.match(lines[-3]) or lines[-2] or not STATUS.match(lines[-1]):
-        return None, {}, "test summary is not at the end of the output"
+    if status_at[0] != ran_at[0] + 2 or lines[ran_at[0] + 1]:
+        return None, {}, "malformed test summary"
+    ran_lines, status_lines = [RAN.match(lines[ran_at[0]])], [STATUS.match(lines[status_at[0]])]
     counts: dict[str, int] = {}
     for part in filter(None, (status_lines[0].group(2) or "").split(",")):
         key, _, value = part.strip().partition("=")
