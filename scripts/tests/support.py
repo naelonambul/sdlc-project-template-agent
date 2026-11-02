@@ -153,10 +153,15 @@ def tree_state(area: Path) -> dict:
         if ".git" in dirnames:
             dirnames.remove(".git")
             repo = here
+            key = f"{repo.relative_to(area).as_posix()}/.git"
             env = {**os.environ, **GIT_ENV}
-            for args in (["for-each-ref", "--format=%(refname) %(objectname)"], ["symbolic-ref", "-q", "HEAD"], ["ls-files", "-s"]):
+            # HEAD as written: a symbolic ref, or the commit of a detached HEAD.
+            state[f"{key}:HEAD"] = (repo / ".git" / "HEAD").read_bytes()
+            for args in (["for-each-ref", "--format=%(refname) %(objectname)"], ["ls-files", "-s"]):
                 proc = subprocess.run(["git", *args], cwd=repo, env=env, capture_output=True)
-                state[f"{repo.relative_to(area).as_posix()}/.git:{args[0]}"] = proc.stdout
+                if proc.returncode != 0:
+                    raise AssertionError(f"git {args} failed in {repo}: {proc.stderr.decode(errors='replace')}")
+                state[f"{key}:{args[0]}"] = proc.stdout
         for name in sorted(dirnames) + sorted(filenames):
             path = here / name
             rel = path.relative_to(area).as_posix()
@@ -181,16 +186,20 @@ def restore(area: Path, snapshot: Path) -> None:
 
 # Volatile values that differ between two identical runs, and nothing else.
 RUN_ID = re.compile(r"\d{8}T\d{12}Z")  # repo.py verify run ids and the evidence directories named after them
-AT = re.compile(r"\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}Z")  # the `at` time approve records and echoes
+AT = re.compile(r"\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}Z")  # the `at` time approve echoes
+AT_FIELD = re.compile(r'("at": ")\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}Z(")')  # the `at` field approve writes
 DURATION = re.compile(r'("duration_seconds": )[0-9.]+')
 
 
-def normalize(text: str) -> str:
+def normalize(text: str, channel: str = "stdout") -> str:
+    """Mask the volatile values of one output channel ("stdout", "stderr") or of a written "file"."""
     text = RUN_ID.sub("<run-id>", text)
-    text = AT.sub("<at>", text)
     text = DURATION.sub(r"\1<duration>", text)
+    if channel == "file":
+        return AT_FIELD.sub(r"\1<at>\2", text)
+    text = AT.sub("<at>", text)
     lines = text.rstrip("\n").splitlines()
-    if lines and "Traceback (most recent call last):" in text:
+    if channel == "stderr" and lines and "Traceback (most recent call last):" in text:
         # The outermost frames differ by construction (module level vs. the test runner); the error does not.
         return "<traceback>\n" + lines[-1]
     return text
@@ -208,7 +217,7 @@ def _normal_state(state: dict) -> dict:
     for path, value in state.items():
         if isinstance(value, tuple) and value[0] == "file":
             try:
-                value = (*value[:2], normalize(runs(value[2].decode())))
+                value = (*value[:2], normalize(runs(value[2].decode()), "file"))
             except UnicodeDecodeError:
                 pass
         out[runs(path)] = value
@@ -221,7 +230,7 @@ def compare_runs(expected, actual) -> str | None:
     if a.returncode != b.returncode:
         return f"exit {a.returncode} != {b.returncode}"
     for name in ("stdout", "stderr"):
-        x, y = normalize(getattr(a, name)), normalize(getattr(b, name))
+        x, y = normalize(getattr(a, name), name), normalize(getattr(b, name), name)
         if x != y:
             return f"{name} differs:\n--- subprocess\n{x}\n--- in-process\n{y}"
     x, y = _normal_state(a_state), _normal_state(b_state)

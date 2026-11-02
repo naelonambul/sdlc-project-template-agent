@@ -143,6 +143,44 @@ class CompareRuns(unittest.TestCase):
             with self.subTest(name):
                 self.assertIsNotNone(self.same(base, base, self.BASE_STATE, state))
 
+    def test_normalization_is_limited_to_its_channel(self):
+        """Traceback folding applies only to stderr, and file timestamps only to the `at` field approve writes."""
+        tb = "Traceback (most recent call last):\n  File \"x\", line 1\n{}\nValueError: same\n"
+        self.assertIsNotNone(self.same(run(1, tb.format("a")), run(1, tb.format("b"))))
+
+        def file(text):
+            return {**self.BASE_STATE, "repo/f.txt": ("file", 0o644, text.encode())}
+
+        cases = {
+            "traceback marker in a file": (tb.format("a"), tb.format("b")),
+            "timestamp outside the at field": ("seen 2026-11-03T01:02:03Z\n", "seen 2026-11-03T09:08:07Z\n"),
+        }
+        for name, (a, b) in cases.items():
+            with self.subTest(name):
+                self.assertIsNotNone(self.same(run(), run(), file(a), file(b)))
+        at = '{{\n  "at": "{}"\n}}\n'
+        self.assertIsNone(self.same(run(), run(), file(at.format("2026-11-03T01:02:03Z")), file(at.format("2026-11-03T09:08:07Z"))))
+
+
+class TreeState(RepoCase):
+    """tree_state records what a call can change in a repository, including a detached HEAD."""
+
+    def test_detached_head_commit_is_recorded(self):
+        first = self.git("rev-parse", "HEAD")
+        self.git("commit", "--allow-empty", "-m", "second")
+        second = self.git("rev-parse", "HEAD")
+        area = self.root.parent
+        self.git("checkout", "-q", "--detach", first)
+        at_first = support.tree_state(area)
+        self.git("checkout", "-q", "--detach", second)
+        at_second = support.tree_state(area)
+        self.assertIsNotNone(support.compare_runs((run(), at_first), (run(), at_second)))
+
+    def test_git_failure_is_not_recorded_as_empty_state(self):
+        (self.root / ".git" / "index").write_bytes(b"not an index")
+        with self.assertRaises(AssertionError):
+            support.tree_state(self.root.parent)
+
 
 class InProcessIsolation(RepoCase):
     """An in-process call leaves the test process as it found it."""
@@ -165,7 +203,7 @@ class InProcessIsolation(RepoCase):
         for name, module in modules.items():
             with self.subTest(name):
                 before = self.snapshot()
-                proc = support.invoke(module, REPO_PY, ["status", "--json", "--ci"], None, self.root)
+                proc = support.invoke(module, REPO_PY, ["status", "--json", "--ci"], "stdin text\n", self.root)
                 self.assertEqual(self.snapshot(), before)
                 if name == "exception":
                     self.assertEqual(proc.returncode, 1)
@@ -189,7 +227,7 @@ class InProcessIsolation(RepoCase):
 
     @staticmethod
     def object_children():
-        ps = subprocess.run(["ps", "-A", "-o", "ppid=,stat=,command="], capture_output=True, text=True).stdout
+        ps = subprocess.run(["ps", "-A", "-o", "ppid=,stat=,command="], capture_output=True, text=True, check=True).stdout
         mine = str(os.getpid())
         return [line for line in ps.splitlines() if line.split(None, 1)[0] == mine and "cat-file" in line]
 
