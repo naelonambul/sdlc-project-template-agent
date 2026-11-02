@@ -5,7 +5,7 @@
     {
       "id": "control-plane",
       "group": "core",
-      "argv": ["python3", "-m", "unittest", "discover", "-s", "scripts/tests", "-t", "."],
+      "argv": ["python3", "scripts/tests/run.py"],
       "cwd": ".",
       "timeout_seconds": 600,
       "paths": ["scripts/**", "checks.json", "changes/**", ".github/**", ".claude/**", ".agents/**", "AGENTS.md", "intent.md", "spec.md", ".gitattributes"],
