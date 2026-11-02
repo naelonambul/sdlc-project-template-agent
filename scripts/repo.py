@@ -1465,32 +1465,35 @@ def approval_claim(root: Path, args) -> tuple[Path, dict, dict]:
     path = packet_dir / "change.json"
     data = packet_json(path, f"{CHANGES}/{cid}/change.json")
     ctx = Context(root=root, baseline_branch=baseline_branch(root))
-    st = evaluate_change(ctx, cid)
-    if any(r.code == "invalid-change" for r in st.errors):
-        raise Refusal("; ".join(r.message for r in st.errors if r.code == "invalid-change"))
-    if artifact not in st.artifacts:
-        raise Refusal(f"{artifact} is not in the chain of a {st.kind!r} change ({', '.join(st.artifacts)})")
-    if not (packet_dir / artifact).is_file():
-        raise Refusal(f"{CHANGES}/{cid}/{artifact} does not exist yet; draft it first")
-    if is_placeholder(st.kind, packet_dir, artifact):
-        raise Refusal(f"{CHANGES}/{cid}/{artifact} still carries the unestablished marker; draft it and remove the marker first")
-    if st.anchor:
-        raise Refusal(f"the change is already closed on {ctx.baseline_branch!r} (anchor {st.anchor[:12]}); record follow-up work as a new change")
-    chain = list(st.artifacts)
-    for upstream in chain[: chain.index(artifact)]:
-        if st.artifacts[upstream]["approval"] == "none":
-            raise Refusal(f"approve {upstream} before {artifact}: artifacts are approved in order {' -> '.join(chain)}")
-    claim = {
-        "artifact": artifact,
-        "sha256": file_digest(packet_dir / artifact),
-        "by": args.by.strip(),
-        "at": _dt.datetime.now(_dt.timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ"),
-    }
-    if artifact == PLAN:
-        claim["write_scope_sha256"] = scope_digest(data.get("write_scope", []))
-    if args.note:
-        claim["note"] = args.note
-    return path, data, claim
+    try:
+        st = evaluate_change(ctx, cid)
+        if any(r.code == "invalid-change" for r in st.errors):
+            raise Refusal("; ".join(r.message for r in st.errors if r.code == "invalid-change"))
+        if artifact not in st.artifacts:
+            raise Refusal(f"{artifact} is not in the chain of a {st.kind!r} change ({', '.join(st.artifacts)})")
+        if not (packet_dir / artifact).is_file():
+            raise Refusal(f"{CHANGES}/{cid}/{artifact} does not exist yet; draft it first")
+        if is_placeholder(st.kind, packet_dir, artifact):
+            raise Refusal(f"{CHANGES}/{cid}/{artifact} still carries the unestablished marker; draft it and remove the marker first")
+        if st.anchor:
+            raise Refusal(f"the change is already closed on {ctx.baseline_branch!r} (anchor {st.anchor[:12]}); record follow-up work as a new change")
+        chain = list(st.artifacts)
+        for upstream in chain[: chain.index(artifact)]:
+            if st.artifacts[upstream]["approval"] == "none":
+                raise Refusal(f"approve {upstream} before {artifact}: artifacts are approved in order {' -> '.join(chain)}")
+        claim = {
+            "artifact": artifact,
+            "sha256": file_digest(packet_dir / artifact),
+            "by": args.by.strip(),
+            "at": _dt.datetime.now(_dt.timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ"),
+        }
+        if artifact == PLAN:
+            claim["write_scope_sha256"] = scope_digest(data.get("write_scope", []))
+        if args.note:
+            claim["note"] = args.note
+        return path, data, claim
+    finally:
+        ctx.close()
 
 
 def cmd_approve(args) -> int:
@@ -1576,34 +1579,37 @@ def closure_record(root: Path, args) -> tuple[Path, dict]:
     if not evidence:
         raise Refusal("--evidence is required: cite the local verify evidence (for example the .evidence/<run>/evidence.json path)")
     ctx = Context(root=root, baseline_branch=baseline_branch(root))
-    st = evaluate_change(ctx, cid)
-    if st.anchor:
-        raise Refusal(f"the change is already closed on {ctx.baseline_branch!r} (anchor {st.anchor[:12]}); record follow-up work as a new change")
-    blocking = [r for r in st.reasons if r.level in ("error", "pending") and not r.code.startswith("closure")]
-    if blocking:
-        raise Refusal("the change is not ready to close: " + "; ".join(r.message for r in blocking))
-    present = {name for name in CHAIN if (packet_dir / name).is_file()}
-    carried = sorted(present & set(BASELINE))
-    baseline = {}
-    for name in carried:
-        root_digest, _ = root_state(ctx, name)
-        local = file_digest(packet_dir / name)
-        if root_digest != local:
-            raise Refusal(f"accepted {name} has not been merged into the root: cp {CHANGES}/{cid}/{name} {name}")
-        baseline[name] = root_digest
-    check_verify_evidence(root, cid, evidence)
-    refs = []
-    for ref in evidence:
-        candidate = root / ref
-        refs.append(f"{ref} {file_digest(candidate)}" if candidate.is_file() else ref)
-    closure = {
-        "schema": SCHEMA,
-        "baseline": baseline,
-        "packet_sha256": packet_digest(worktree_packet(root, cid)),
-        "tree_sha256": candidate_digest(root, cid),
-        "evidence": refs,
-    }
-    return packet_dir / CLOSURE, closure
+    try:
+        st = evaluate_change(ctx, cid)
+        if st.anchor:
+            raise Refusal(f"the change is already closed on {ctx.baseline_branch!r} (anchor {st.anchor[:12]}); record follow-up work as a new change")
+        blocking = [r for r in st.reasons if r.level in ("error", "pending") and not r.code.startswith("closure")]
+        if blocking:
+            raise Refusal("the change is not ready to close: " + "; ".join(r.message for r in blocking))
+        present = {name for name in CHAIN if (packet_dir / name).is_file()}
+        carried = sorted(present & set(BASELINE))
+        baseline = {}
+        for name in carried:
+            root_digest, _ = root_state(ctx, name)
+            local = file_digest(packet_dir / name)
+            if root_digest != local:
+                raise Refusal(f"accepted {name} has not been merged into the root: cp {CHANGES}/{cid}/{name} {name}")
+            baseline[name] = root_digest
+        check_verify_evidence(root, cid, evidence)
+        refs = []
+        for ref in evidence:
+            candidate = root / ref
+            refs.append(f"{ref} {file_digest(candidate)}" if candidate.is_file() else ref)
+        closure = {
+            "schema": SCHEMA,
+            "baseline": baseline,
+            "packet_sha256": packet_digest(worktree_packet(root, cid)),
+            "tree_sha256": candidate_digest(root, cid),
+            "evidence": refs,
+        }
+        return packet_dir / CLOSURE, closure
+    finally:
+        ctx.close()
 
 
 def cmd_close(args) -> int:
