@@ -113,6 +113,51 @@ class Runner(unittest.TestCase):
         self.assertEqual(proc.returncode, 1)
         self.assertRegex(self.summary(proc), r"^FAILED: .*no test summary")
 
+    def test_shards_run_exactly_the_discovered_tests(self):
+        """A module's load_tests selects one failing method; reloading the whole class would run a passing one instead."""
+        self.module("test_selected", """
+            import unittest
+
+            class Case(unittest.TestCase):
+                def check_fail(self):
+                    self.fail("the discovered test ran")
+
+                def test_ok(self):
+                    pass
+
+            def load_tests(loader, tests, pattern):
+                return unittest.TestSuite([Case("check_fail")])
+            """)
+        proc = self.run_runner()
+        self.assertEqual(proc.returncode, 1, proc.stdout)
+        self.assertIn("the discovered test ran", proc.stdout)
+
+    def test_test_output_cannot_stand_in_for_the_summary(self):
+        self.module("test_fake", """
+            import sys
+            import unittest
+
+            class Fake(unittest.TestCase):
+                def test_prints_a_summary(self):
+                    sys.stderr.write("Ran 5 tests in 0.001s\\n\\nOK\\n")
+            """)
+        proc = self.run_runner()
+        self.assertEqual(proc.returncode, 1, proc.stdout)
+        self.assertRegex(self.summary(proc), r"^FAILED: .*ambiguous test summary")
+
+    def test_test_stdout_does_not_disturb_the_summary(self):
+        self.module("test_noisy", """
+            import unittest
+
+            class Noisy(unittest.TestCase):
+                def test_prints(self):
+                    print("Ran 9 tests in 0.1s")
+                    print("FAILED (failures=3)")
+            """)
+        proc = self.run_runner()
+        self.assertEqual(proc.returncode, 0, proc.stdout)
+        self.assertRegex(self.summary(proc), r"^OK: ran 1 tests")
+
     def test_killed_shard_fails_the_run(self):
         self.module("test_kill", """
             import os
