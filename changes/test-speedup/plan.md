@@ -2,7 +2,7 @@
 
 ## Summary
 
-Make the control-plane test suite (`scripts/tests`, the `control-plane` check) fast without changing what any existing test asserts. Most of its time goes to starting a new Python process for every `repo.py` and `guard.py` call and to building a fresh Git repository in every `setUp`. This change runs those calls in-process, keeps a small always-on subprocess contract suite for both entry points, and copies a prebuilt fixture repository instead of building one.
+Make the control-plane test suite (`scripts/tests`, the `control-plane` check) faster without changing what any existing test asserts; revision 2 sets the target from measurement (see "Measured during implementation"). Most of its time goes to starting a new Python process for every `repo.py` and `guard.py` call and to building a fresh Git repository in every `setUp`. This change runs those calls in-process, keeps a small always-on subprocess contract suite for both entry points, and copies a prebuilt fixture repository instead of building one.
 
 This is a `repository` change. Product code changes in one place only: `approval_claim` and `closure_record` in `scripts/repo.py` close the `Context` they open, as `compute_status` already does. That is resource cleanup with no change to any output, exit code, or file `repo.py` writes. No `scripts/hooks/guard.py`, `checks.json`, `.github/**`, existing test assertion, or dependency changes. The suite stays standard-library Python that needs only Git.
 
@@ -12,9 +12,19 @@ Taken on 2026-11-03 on an Apple M4 (10 cores) with Git 2.54.0 and Python 3.13.13
 
 - The full suite: 261 tests in 71.6s on this run (45s in an earlier, less loaded run). `test_status` is the largest module, then `test_approve_close`, then `test_guard`.
 - The tests call `repo.py` through `RepoCase.run_repo` or `RepoCase.status` about 160 times, and `guard.py` through `GuardCase.run_guard` in every guard test.
-- One `repo.py status` call in a fixture: about 92ms as a subprocess, about 20ms in-process.
 - `RepoCase.setUp` (`git init`, three files, one commit): about 20ms; copying a prebuilt repository: about 4ms.
 - `python3 -c pass` costs 8.8ms here; `guard.py claude` for a Bash call costs 33ms.
+
+### Measured during implementation (revision 2)
+
+The first approved revision assumed one in-process `status` call costs about 20ms. That premise was wrong, and its "under 25s" target with it. Measured on the same machine after steps 1-3, with the fixture template and in-process `run_repo`:
+
+- The default suite: 261 tests in 46s, all passing; `SDLC_TEST_EQUIVALENCE=1`: 261 tests in 103s, all passing.
+- Per module: `test_status` 23.9s, `test_approve_close` 8.9s, `test_guard` 5.6s (still subprocess), `test_verify` 4.8s, `test_new` 2.4s.
+- `cProfile` of `test_status`: 20.6s of 23.6s in `subprocess.run`. 133 in-process `status` calls take about 98ms each, spent in about 13 `git` processes per call at about 8ms each (`repo.git()`: 1,766 calls, 14.7s); fixture setup through `RepoCase.git` spends about 5.9s. Removing the Python start saves about 9ms per call, not 70ms.
+- So a sequential suite stays near 40s whatever this change does in the test harness. Reaching 25s needs a parallel runner, which is the next change.
+
+The owner chose to finish this change on its approved scope and take the parallel runner next, after a second read-only review by the same two models recommended exactly that sequence.
 
 ### Review
 
@@ -26,7 +36,8 @@ Before approval the draft was reviewed read-only by Codex (`gpt-6-astra`) and An
 - **Lazy imports in `guard.py`.** `-X importtime` shows `argparse` is the only import the `claude` path could skip, about 1-2ms of 33ms.
 - **`functools.lru_cache` on `glob_regex` in `repo.py`.** `status` already runs in 0.1-0.2s; no measurable gain.
 - **Keeping `approve` and `close` as subprocess calls to avoid touching `repo.py`.** It leaves the slowest tests slow and keeps a real leak hidden; closing the `Context` is smaller and correct.
-- **A parallel test runner.** It changes the registered `control-plane` argv in `checks.json`, which CI runs. A separate change, measured after this one.
+- **A parallel test runner.** The only way below about 40s, but it changes the registered `control-plane` argv in `checks.json`, which CI runs, and mixing it with the in-process harness would blur which change caused a failure. The next change, measured from this one.
+- **Fewer `git` processes in `repo.py status`** (sharing `merge-base`/diff between `resolve_active` and `check_scope`, one `ls-files`, `git show` through `Objects`). Estimated at 3-9s across the suite, so the sequential suite would still exceed 30s, and it touches status and closure evaluation, which would need a differential check against the previous implementation like `status-batching`'s; the in-process/subprocess equivalence cannot prove it, because both sides run the same product code.
 - **Removing the duplicate unittest job in CI.** A workflow policy decision for the owner, and a separate change.
 - **Rewriting `repo.py` or the guard in another language.** The cost is process starts and Git calls, not Python computation, and the template promises "Python 3 and Git only".
 
@@ -77,7 +88,8 @@ Single agent: the steps share `support.py`. Each step is one commit.
 - **Comparator sensitivity.** The comparator tests above show `compare_runs` catches a one-sided difference in each compared dimension, which equivalence between two identical scripts cannot show by itself.
 - **Suite sensitivity.** In a scratch copy of the repository, never the working tree, apply one mutation at a time and run the suite there in default mode and in `SDLC_TEST_SUBPROCESS=1` mode: invert `ok` in `status --json`; make `main` return 2 on `Refusal`; write a wrong `packet_sha256` in `closure_record`; change the `root-baseline` deny reason in `guard.py`. Each must fail at least one existing test, and the same tests in both modes. A mutation no existing assertion catches is replaced by one that an existing assertion pins, and the substitution is recorded in the pull request.
 - **No leaked processes.** The default suite runs with `-W error::ResourceWarning` without new warnings, and the leak test in `test_support.py` passes.
-- **Speed.** The default suite runs in under 25s on the machine above, against 71.6s at `33e5064` measured the same way in the same session. Timing on CI is not a success criterion.
+- **Speed.** In one session on the machine above, run the default suite three times at `33e5064` and three times at the finished change, alternating. The median of the finished change, with all existing and new tests, is under 50s. Report every run and the range. Timing on CI is not a success criterion.
+- The 46s and 261 passes measured after step 3 are not evidence for steps 3-4 as a whole: `test_support.py` and the guard paths are proven only by the runs above, made after step 4.
 - `python3 scripts/repo.py verify --change test-speedup --full` reports no `failed`, `blocked`, or `not-run` check.
 
 No `AGENTS.md`, skill, or guard file changes, so no smoke probe is required.
