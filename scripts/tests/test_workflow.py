@@ -21,19 +21,33 @@ JOB_LINES = [
     ("input", re.compile(r"          [a-z][a-z0-9-]*: \S.*")),
     ("run", re.compile(r"      - run: ([^\s|>'\"].*)")),
 ]
-TOP_LEVEL_ENV = {"REPO_ARGS", "VERIFY_ARGS"}
+TOP_LEVEL_KEYS = ["name", "on", "permissions", "concurrency", "env", "jobs"]  # in this order, unquoted
+TOP_LEVEL_ENV = ["REPO_ARGS", "VERIFY_ARGS"]  # inherited by every job, so fixed
 
 
 def control_plane_job_findings(text: str, argv: list[str]) -> list[str]:
     """Why the control-plane-tests job could pass without running the tests outside repo.py, or []."""
     findings = []
-    if re.search(r"(?m)^defaults:", text):
-        findings.append("top-level defaults: can change the shell of every run step")
-    env = re.search(r"(?ms)^env:\n(.*?)(?=^\S)", text)
-    env_keys = set(re.findall(r"(?m)^  ([A-Za-z_][A-Za-z0-9_]*):", env.group(1))) if env else set()
-    if env_keys != TOP_LEVEL_ENV:
-        findings.append(f"top-level env keys {sorted(env_keys)} != {sorted(TOP_LEVEL_ENV)}")
-    match = re.search(r"(?ms)^  control-plane-tests:\n(.*?)(?=^  [a-z0-9-]+:\n|\Z)", text)
+    lines = text.splitlines()
+    top = [line.rstrip() for line in lines if line and not line[0].isspace() and not line.startswith("#")]
+    top_keys = [m.group(1) if (m := re.fullmatch(r"([a-z]+):.*", line)) else line for line in top]
+    if top_keys != TOP_LEVEL_KEYS:
+        findings.append(f"top-level keys {top_keys} != {TOP_LEVEL_KEYS}: e.g. defaults: can change every run step's shell")
+    if "env:" in top:
+        env_keys = []
+        for line in lines[lines.index("env:") + 1 :]:
+            if line and not line[0].isspace():
+                break  # the next top-level key
+            if not line.strip() or line.startswith("    ") or line.strip().startswith("#"):
+                continue  # blank, comment, or a continuation of the folded REPO_ARGS value
+            m = re.fullmatch(r"  ([A-Z_]+):.*", line)
+            env_keys.append(m.group(1) if m else line.strip())
+        if env_keys != TOP_LEVEL_ENV:
+            findings.append(f"top-level env keys {env_keys} != {TOP_LEVEL_ENV}")
+    job_heads = [line for line in lines if re.fullmatch(r"""  ["']?control-plane-tests["']?:\s*""", line)]
+    if len(job_heads) != 1 or job_heads[0] != "  control-plane-tests:":
+        findings.append(f"control-plane-tests must be defined exactly once, unquoted: {job_heads}")
+    match = re.search(r"(?ms)^  control-plane-tests:\n(.*?)(?=^  \S|\Z)", text)
     if not match:
         return findings + ["no control-plane-tests job"]
     runs, previous = [], None
@@ -127,6 +141,9 @@ class WorkflowInvariants(unittest.TestCase):
             "job env": ("    timeout-minutes: 15\n    steps:", "    timeout-minutes: 15\n    env:\n      SDLC_TEST_JOBS: 1\n    steps:"),
             "top-level defaults": ("\njobs:\n", "\ndefaults:\n  run:\n    shell: bash -c 'exit 0' {0}\n\njobs:\n"),
             "extra top-level env": ("\nenv:\n", "\nenv:\n  PYTHONPATH: /tmp/evil\n"),
+            "quoted top-level defaults": ("\njobs:\n", "\n\"defaults\":\n  run:\n    shell: bash -c 'exit 0' {0}\n\njobs:\n"),
+            "quoted top-level env key": ("\nenv:\n", "\nenv:\n  \"PYTHONPATH\": /tmp/evil\n"),
+            "second definition of the job": ("\n  status:\n", "\n  \"control-plane-tests\":\n    runs-on: ubuntu-latest\n    steps:\n      - run: true\n\n  status:\n"),
         }
         for name, (old, new) in mutations.items():
             with self.subTest(name):

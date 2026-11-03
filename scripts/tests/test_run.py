@@ -321,9 +321,33 @@ class Runner(unittest.TestCase):
         self.assertEqual(proc.returncode, 1, proc.stdout)
         self.assertIn("the sibling module ran", proc.stdout)
         (self.top / "synth" / "test_sibling.py").unlink()
+        self.module("test_skipmod_extra", PASSING.format(name="Extra"))  # a module whose name extends the skipped one
         proc = self.run_runner("--jobs", "1")
         self.assertEqual(proc.returncode, 0, proc.stdout)
-        self.assertRegex(self.summary(proc), r"^OK: ran 2 tests .*skipped=2")
+        self.assertRegex(self.summary(proc), r"^OK: ran 4 tests .*skipped=2\)")
+
+    def test_a_failing_shard_still_counts_its_fixture_skips(self):
+        self.module("test_mixed", """
+            import unittest
+
+            class NoTool(unittest.TestCase):
+                @classmethod
+                def setUpClass(cls):
+                    raise unittest.SkipTest("tool missing")
+
+                def test_a(self):
+                    pass
+
+                def test_b(self):
+                    pass
+
+            class Fails(unittest.TestCase):
+                def test_fails(self):
+                    self.fail("must be reported")
+            """)
+        proc = self.run_runner("--jobs", "1")
+        self.assertEqual(proc.returncode, 1, proc.stdout)
+        self.assertRegex(self.summary(proc), r"^FAILED: ran 3 tests in 1 shard \(failures=1, errors=0, skipped=2\)")
 
     def test_set_up_class_error_fails(self):
         self.module("test_setup_error", """

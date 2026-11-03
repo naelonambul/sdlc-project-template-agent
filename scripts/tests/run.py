@@ -148,14 +148,9 @@ def verdict(names: list[str], classes: dict[str, dict], proc, result: dict | Non
         return f"crashed (signal {-proc.returncode})", 0, counts
     if result is None:
         return f"no result (exit {proc.returncode})", 0, counts
-    for key in ("failures", "errors", "skipped"):
-        counts[key] = result[key]
-    if not result["successful"] or proc.returncode != 0:
-        detail = ", ".join(f"{k}={result[k]}" for k in ("failures", "errors", "unexpected_successes"))
-        return f"failed (exit {proc.returncode}; {detail})", len(result["started"]), counts
-
+    # Account first, so a failing shard still reports its fixture-skipped tests; then decide, in order.
     modules = {classes[name]["module"] for name in names}
-    skipped_classes, skipped_modules = set(), set()
+    skipped_classes, skipped_modules, unexpected_skips = set(), set(), []
     for description in result["fixture_skips"]:
         match = FIXTURE_SKIP.match(description)
         if match and match.group(1) == "setUpClass" and match.group(2) in names:
@@ -163,16 +158,22 @@ def verdict(names: list[str], classes: dict[str, dict], proc, result: dict | Non
         elif match and match.group(1) == "setUpModule" and match.group(2) in modules:
             skipped_modules.add(match.group(2))
         else:
-            return f"unexpected fixture skip: {description}", len(result["started"]), counts
-    if Counter(result["started"]) != Counter(result["stopped"]):
-        unfinished = sorted((Counter(result["started"]) - Counter(result["stopped"])).elements())
-        return f"test did not finish: {', '.join(unfinished) or 'start/stop mismatch'}", len(result["started"]), counts
-
-    covered = [i for n in names if n in skipped_classes or classes[n]["module"] in skipped_modules for i in classes[n]["ids"]]
-    expected = Counter(i for n in names if n not in skipped_classes and classes[n]["module"] not in skipped_modules for i in classes[n]["ids"])
+            unexpected_skips.append(description)
+    is_covered = {n: n in skipped_classes or classes[n]["module"] in skipped_modules for n in names}
+    covered = [i for n in names if is_covered[n] for i in classes[n]["ids"]]
+    expected = Counter(i for n in names if not is_covered[n] for i in classes[n]["ids"])
     started = Counter(result["started"])
-    counts["skipped"] += len(covered)
+    counts = {"failures": result["failures"], "errors": result["errors"], "skipped": result["skipped"] + len(covered)}
     accounted = len(result["started"]) + len(covered)
+
+    if not result["successful"] or proc.returncode != 0:
+        detail = ", ".join(f"{k}={result[k]}" for k in ("failures", "errors", "unexpected_successes"))
+        return f"failed (exit {proc.returncode}; {detail})", accounted, counts
+    if unexpected_skips:
+        return f"unexpected fixture skip: {', '.join(unexpected_skips)}", accounted, counts
+    if started != Counter(result["stopped"]):
+        unfinished = sorted((started - Counter(result["stopped"])).elements())
+        return f"test did not finish: {', '.join(unfinished) or 'start/stop mismatch'}", accounted, counts
     if started != expected:
         missing, extra = sorted((expected - started).elements()), sorted((started - expected).elements())
         reasons = ([f"tests not run: {', '.join(missing)}"] if missing else []) + ([f"unexpected tests run: {', '.join(extra)}"] if extra else [])
