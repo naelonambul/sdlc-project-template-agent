@@ -8,7 +8,7 @@
 - When `test_run.Runner` grew to 31 tests, that greedy assignment put `test_verify.Verify`, `test_approve_close.Approve`, `CarriedRevisionAfterClosure` and `PullRequestGate` in one shard. That shard takes 14.2s, while the lightest takes 7.1s.
 - Test count is a poor proxy for cost, and any new test can reshuffle heavy classes together again.
 
-This change runs **each test class in its own child process**, drawn from a pool of at most `--jobs` concurrent processes, heaviest classes first. No packing is left to go wrong, and each class runs isolated from the others. The verdict from `runner-integrity` is unchanged; it simply applies to one class per shard.
+This change runs **each test class in its own child process**, drawn from a pool of at most `--jobs` concurrent processes, classes with the most tests first. No packing is left to go wrong, and each class runs isolated from the others. The verdict from `runner-integrity` is unchanged; it simply applies to one class per shard.
 
 ## Measurements (at `932e69c`, macOS, 10 cores, same load, prototype in a scratch copy)
 
@@ -26,8 +26,8 @@ This change runs **each test class in its own child process**, drawn from a pool
 
 - **Chosen: one process per class from a bounded pool.**
   - It needs no cost estimate.
-  - Assignment is trivially deterministic: a class always runs alone, so a failure reproduces with the class alone.
   - It is robust to new tests.
+  - Class assignment, submission order and output order are deterministic. A class always runs in a process of its own, so no failure can come from sharing a process with another class. Failures that depend on load are not made reproducible by this; that was not true before either.
 - **Rejected: balance fixed shards by measured cost.** A stored cost table drifts as tests change, and a timing cache adds state and nondeterminism.
 - **Rejected: split heavy classes into per-test processes.** Classes with `setUpClass`/`setUpModule` must stay whole, and per-test processes multiply start-up cost.
 - **Rejected for now: split `test_status.Closure`.** It is outside this change's files, and the target is met without it.
@@ -35,8 +35,8 @@ This change runs **each test class in its own child process**, drawn from a pool
 ## Files and components that change
 
 - `scripts/tests/run.py`:
-  - **Shards.** With `--jobs` greater than 1, every class is its own shard. Shards are submitted to a `ThreadPoolExecutor(max_workers=jobs)` in the order of descending test count, then name. With `--jobs 1`, all classes form one shard run by one process, unchanged as the sequential path.
-  - **Output.** One line per shard, printed in class-name order after all shards finish; a failed shard's output is printed under its line. The summary line keeps its form: `OK: ran N tests in K shards (...)` / `FAILED: ...`.
+  - **Shards.** With `--jobs` greater than 1, every class is its own shard. The shard list is ordered by descending test count, then class name, and submitted in that order to a `ThreadPoolExecutor(max_workers=jobs)`. Test count is the only cost proxy; this is not a measured cost. With `--jobs 1`, all classes form one shard run by one process, unchanged as the sequential path.
+  - **Output.** One line per shard, printed after all shards finish, in the same order as submission, so the output shows the scheduling order. A failed shard's output is printed under its line. The summary line keeps its form: `OK: ran N tests in K shards (...)` / `FAILED: ...`.
   - **Unchanged:**
     - the discovery child;
     - the shard worker and its result file;
@@ -46,17 +46,22 @@ This change runs **each test class in its own child process**, drawn from a pool
     - the `PYTHONWARNINGS` hand-off.
   - `plan_shards` is replaced by the ordering above.
 - `scripts/tests/test_run.py`:
-  - `test_classes_stay_whole_and_assignment_is_deterministic` becomes `test_each_class_runs_alone`. With 7 classes and `--jobs 3` there are 7 shard lines, each naming exactly one class with its 2 tests. Two runs give the same lines, ignoring timings.
-  - `test_jobs_from_environment_and_flag` and `test_never_more_shards_than_classes` become `test_jobs_bounds_concurrency`. Each of 6 classes records the start and end time of its process in a shared file and sleeps 0.3s. The maximum number of overlapping processes must be at most the effective jobs value: 2 from `SDLC_TEST_JOBS=2`, and 4 from `--jobs 4` with `SDLC_TEST_JOBS=2`. It must also be greater than 1, which shows the pool runs in parallel at all.
-  - `test_jobs_one_runs_one_process` is unchanged.
-  - Every other runner test keeps its assertions. Tests that pass `--jobs` to group classes into one shard are checked, and adjusted only where the shard count appears in an assertion; such a change is listed in the commit message.
+  - `test_classes_stay_whole_and_assignment_is_deterministic` becomes `test_each_class_runs_alone_heaviest_first`. It uses classes with 3, 1, 2, 2 and 1 tests and `--jobs 2`. There must be 5 shard lines, each naming exactly one class with its own test count, ordered by descending test count, then name. Two runs must give the same lines, ignoring timings.
+  - `test_jobs_from_environment_and_flag` and `test_never_more_shards_than_classes` become `test_jobs_sets_the_exact_concurrency`. This version uses no sleeps.
+    - Each of 6 classes, on starting, creates a marker file in a shared directory.
+    - It then waits, with a 10s timeout, until at least J markers exist, where J is given to it through the environment.
+    - It records how many classes were running at that moment (started and not yet finished), then marks itself finished.
+    - The highest recorded value must equal J exactly: 2 with `SDLC_TEST_JOBS=2`, and 4 with `--jobs 4` and `SDLC_TEST_JOBS=2`. The pool cannot exceed J, and the wait guarantees J overlap, so the assertion is exact and not timing-dependent. A pool smaller than J would stall at the wait, time out, and fail.
+  - `test_set_up_module_skip_covers_only_that_module` keeps its `--jobs 1` runs and adds a `--jobs 2` run. The skipped module's two classes are then in two shards, each covered by the module's skip, and the prefix-named sibling module still runs: `OK: ran 4 tests ... skipped=2`.
+  - `test_all_passing`: `in 3 shards` becomes `in 5 shards`, because 5 classes run as 5 shards with `--jobs 3`. This is the only existing assertion on a shard count with `--jobs` greater than 1.
+  - `test_jobs_one_runs_one_process` and every other runner test are unchanged.
 - `scripts/README.md`: "one process per group of `TestCase` classes" becomes "one process per `TestCase` class, at most `--jobs N` (or `SDLC_TEST_JOBS`) at a time".
 
 No change to `checks.json`, the workflow, `repo.py`, `guard.py`, `support.py` or `test_workflow.py`.
 
 ## Order of work
 
-1. `scripts/tests/test_run.py`: the two replaced tests. Proof: `python3 -m unittest scripts.tests.test_run` fails on `test_each_class_runs_alone` under the current packing. `test_jobs_bounds_concurrency` passes on both the current and the new code, because packing into `--jobs` shards also bounds concurrency. It guards the new pool's limit; it is not a reproduction.
+1. `scripts/tests/test_run.py`: the replaced and adjusted tests. Proof: `python3 -m unittest scripts.tests.test_run` fails under the current packing on `test_each_class_runs_alone_heaviest_first` and on `test_all_passing`'s shard count. `test_jobs_bounds_concurrency` passes on both the current and the new code, because packing into `--jobs` shards also bounds concurrency. It guards the new pool's limit; it is not a reproduction.
 2. `scripts/tests/run.py` and `scripts/README.md`. Proof: `python3 -m unittest scripts.tests.test_run` passes, and `python3 scripts/tests/run.py` passes with the same count as `unittest discover`.
 3. Full proof, then `python3 scripts/repo.py status --change class-scheduling` and `python3 scripts/repo.py verify --change class-scheduling --full`.
 
@@ -70,8 +75,18 @@ No change to `checks.json`, the workflow, `repo.py`, `guard.py`, `support.py` or
 ## Risks and mitigations
 
 - **More processes.** 41 instead of 8 on this machine. Each builds its own fixture template once (`support._template`). This is measured above and gated by the speed criterion.
-- **The concurrency test is timing-based.** It asserts an upper bound, which cannot flake upward, and a lower bound of 2, which needs only two of six 0.3s sleeps to overlap.
+- **The concurrency test synchronizes instead of sleeping.** The wait has a 10s timeout, so a slow machine delays the test but cannot fail a correct pool.
 - **A class that depends on running in the same process as another class** would break. Measured in `parallel-tests`: none does. Equivalence and subprocess modes run in full.
+
+## Revision 2
+
+The draft was reviewed read-only by Codex (`gpt-6-astra`) and Antigravity (`gemini-4-argon-high`). Both returned "approve with changes". This revision adopts their findings:
+
+- The concurrency test now asserts the exact effective jobs value, so `--jobs` overriding `SDLC_TEST_JOBS` stays verified. It synchronizes with a timeout instead of relying on overlapping sleeps.
+- Output follows submission order. The scheduling test uses classes of different sizes, so heaviest-first is tested.
+- The `setUpModule` test gains a parallel run.
+- The one shard-count assertion that changes is named.
+- The determinism claim is narrowed, and "heaviest" is defined as most tests.
 
 ## Rollback or recovery
 
