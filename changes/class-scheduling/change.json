@@ -1,0 +1,17 @@
+{
+  "schema": 1,
+  "id": "class-scheduling",
+  "kind": "repository",
+  "title": "Run each test class in its own process from a bounded pool",
+  "base": {
+    "ref": "main",
+    "commit": "932e69c4b479abafef536aa9bbb807c01b702e52"
+  },
+  "baseline": {},
+  "write_scope": [
+    "scripts/tests/run.py",
+    "scripts/tests/test_run.py",
+    "scripts/README.md"
+  ],
+  "approvals": []
+}
