@@ -86,6 +86,14 @@ class WorkflowInvariants(unittest.TestCase):
             "step if": (f"      - run: {runner}", f"      - if: false\n        run: {runner}"),
             "continue-on-error": (f"      - run: {runner}", f"      - continue-on-error: true\n        run: {runner}"),
             "through repo.py": (f"run: {runner}", "run: python3 scripts/repo.py verify --group core"),
+            "continuation line": (f"      - run: {runner}\n", f"      - run: {runner}\n          || true\n"),
+            "block scalar": (f"      - run: {runner}\n", f"      - run: |\n          {runner} || true\n"),
+            "quoted if": (f"      - run: {runner}", f'      - "if": false\n        run: {runner}'),
+            "quoted continue-on-error": (f"      - run: {runner}", f'      - "continue-on-error": true\n        run: {runner}'),
+            "shell": (f"      - run: {runner}", f"      - shell: bash\n        run: {runner}"),
+            "job env": ("    timeout-minutes: 15\n    steps:", "    timeout-minutes: 15\n    env:\n      SDLC_TEST_JOBS: 1\n    steps:"),
+            "top-level defaults": ("\njobs:\n", "\ndefaults:\n  run:\n    shell: bash -c 'exit 0' {0}\n\njobs:\n"),
+            "extra top-level env": ("\nenv:\n", "\nenv:\n  PYTHONPATH: /tmp/evil\n"),
         }
         for name, (old, new) in mutations.items():
             with self.subTest(name):
