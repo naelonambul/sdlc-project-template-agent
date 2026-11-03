@@ -1,9 +1,10 @@
 #!/usr/bin/env python3
-"""Run the control-plane tests in parallel shards, one process per shard.
+"""Run the control-plane tests in parallel, one process per TestCase class, at most --jobs at a time.
 
 The runner discovers the same tests `python3 -m unittest discover -s scripts/tests -t .` finds,
-splits them by TestCase class, and passes only if every shard passes and every discovered test
-was run (or skipped by its class's or module's fixture). `--jobs 1` runs everything in one shard.
+runs each TestCase class as its own shard, classes with the most tests first, and passes only if
+every shard passes and every discovered test was run (or skipped by its class's or module's
+fixture). `--jobs 1` runs every class in one shard, in one process.
 
 This parent process never imports test code. Discovery and each shard run in child processes that
 write a result file only after they finish normally, so test code that ends its process early
@@ -127,14 +128,10 @@ def shard_child(out: Path, ids: list[str]) -> int:
 
 
 def plan_shards(classes: dict[str, dict], jobs: int) -> list[list[str]]:
-    """Assign whole classes to at most `jobs` shards: largest first, to the least-loaded shard. Deterministic."""
-    shards: list[list[str]] = [[] for _ in range(max(1, min(jobs, len(classes))))]
-    load = [0] * len(shards)
-    for name in sorted(classes, key=lambda n: (-len(classes[n]["ids"]), n)):
-        i = load.index(min(load))
-        shards[i].append(name)
-        load[i] += len(classes[name]["ids"])
-    return [sorted(shard) for shard in shards]
+    """One shard per class, most tests first (then by name); with one job, one shard of every class."""
+    if jobs == 1:
+        return [sorted(classes)]
+    return [[name] for name in sorted(classes, key=lambda n: (-len(classes[n]["ids"]), n))]
 
 
 def child(args: list[str], top: Path, env: dict) -> subprocess.CompletedProcess:
@@ -236,7 +233,7 @@ def main(argv=None) -> int:
             proc = child(["--top", str(top), "--shard", str(out), *ids], top, env)
             return proc, read_json(out), time.monotonic() - began_shard
 
-        with ThreadPoolExecutor(max_workers=len(shards)) as pool:
+        with ThreadPoolExecutor(max_workers=min(jobs, len(shards))) as pool:  # at most `jobs` children at once
             results = list(pool.map(run_shard, enumerate(shards, 1)))
 
     total = {"failures": 0, "errors": 0, "skipped": 0}
