@@ -62,7 +62,7 @@ class Runner(unittest.TestCase):
         self.classes(5)
         proc = self.run_runner("--jobs", "3")
         self.assertEqual(proc.returncode, 0, proc.stdout + proc.stderr)
-        self.assertRegex(self.summary(proc), r"^OK: ran 10 tests in 3 shards")
+        self.assertRegex(self.summary(proc), r"^OK: ran 10 tests in 5 shards")
 
     def test_failing_test_fails_the_run_and_prints_its_shard(self):
         self.classes(3)
@@ -322,9 +322,11 @@ class Runner(unittest.TestCase):
         self.assertIn("the sibling module ran", proc.stdout)
         (self.top / "synth" / "test_sibling.py").unlink()
         self.module("test_skipmod_extra", PASSING.format(name="Extra"))  # a module whose name extends the skipped one
-        proc = self.run_runner("--jobs", "1")
-        self.assertEqual(proc.returncode, 0, proc.stdout)
-        self.assertRegex(self.summary(proc), r"^OK: ran 4 tests .*skipped=2\)")
+        for jobs in ("1", "2"):  # one shard with every class; one shard per class
+            with self.subTest(jobs=jobs):
+                proc = self.run_runner("--jobs", jobs)
+                self.assertEqual(proc.returncode, 0, proc.stdout)
+                self.assertRegex(self.summary(proc), r"^OK: ran 4 tests .*skipped=2\)")
 
     def test_a_failing_shard_still_counts_its_fixture_skips(self):
         self.module("test_mixed", """
@@ -458,19 +460,18 @@ class Runner(unittest.TestCase):
         self.assertEqual(proc.returncode, 0, proc.stdout)
         self.assertRegex(self.summary(proc), r"^OK: ran 3 tests .*skipped=2")
 
-    def test_classes_stay_whole_and_assignment_is_deterministic(self):
-        self.classes(7)
-        first, second = self.run_runner("--jobs", "3"), self.run_runner("--jobs", "3")
+    def test_each_class_runs_alone_heaviest_first(self):
+        sizes = {"Alpha": 1, "Bravo": 3, "Charlie": 2, "Delta": 2, "Echo": 1}
+        source = "import unittest\n"
+        for name, size in sizes.items():
+            source += f"\nclass {name}(unittest.TestCase):\n" + "".join(f"    def test_{i}(self):\n        pass\n" for i in range(size))
+        self.module("test_sizes", source)
+        first, second = self.run_runner("--jobs", "2"), self.run_runner("--jobs", "2")
         self.assertEqual(first.returncode, 0, first.stdout)
         lines = self.shard_lines(first)
-        self.assertEqual(len(lines), 3)
+        shards = [(int(re.search(r": (\d+) tests", line).group(1)), re.findall(r"synth\.test_sizes\.(\w+)", line)) for line in lines]
+        self.assertEqual(shards, [(3, ["Bravo"]), (2, ["Charlie"]), (2, ["Delta"]), (1, ["Alpha"]), (1, ["Echo"])])
         self.assertEqual([re.sub(r" in [0-9.]+s", "", line) for line in lines], [re.sub(r" in [0-9.]+s", "", line) for line in self.shard_lines(second)])
-        named = re.findall(r"Case\d+", " ".join(lines))
-        self.assertEqual(sorted(named), sorted(f"Case{i}" for i in range(7)))  # each class appears in exactly one shard
-        for line in lines:
-            tests = int(re.search(r": (\d+) tests", line).group(1))
-            classes = len(re.findall(r"Case\d+", line))
-            self.assertEqual(tests, 2 * classes)
 
     def test_jobs_one_runs_one_process(self):
         self.classes(4)
@@ -479,18 +480,49 @@ class Runner(unittest.TestCase):
         self.assertEqual(len(self.shard_lines(proc)), 1)
         self.assertRegex(self.summary(proc), r"^OK: ran 8 tests in 1 shard\b")
 
-    def test_jobs_from_environment_and_flag(self):
-        self.classes(6)
-        proc = self.run_runner(env={"SDLC_TEST_JOBS": "2"})
-        self.assertEqual(len(self.shard_lines(proc)), 2, proc.stdout)
-        proc = self.run_runner("--jobs", "4", env={"SDLC_TEST_JOBS": "2"})
-        self.assertEqual(len(self.shard_lines(proc)), 4, proc.stdout)
+    def test_jobs_sets_the_exact_concurrency(self):
+        """Each class waits until J classes have started (and briefly for a J+1th), then records how many are running.
 
-    def test_never_more_shards_than_classes(self):
-        self.classes(2)
-        proc = self.run_runner("--jobs", "8")
-        self.assertEqual(proc.returncode, 0, proc.stdout)
-        self.assertEqual(len(self.shard_lines(proc)), 2)
+        The peak must be exactly J: a smaller pool never reaches J and times out; a larger one overlaps J+1.
+        """
+        marks = self.top / "marks"
+        marks.mkdir()
+        body = """
+            import os
+            import time
+            import unittest
+            from pathlib import Path
+
+            MARKS = Path(os.environ["SYNTH_MARKS"])
+
+            class Case{i}(unittest.TestCase):
+                def test_overlap(self):
+                    want = int(os.environ["SYNTH_JOBS"])
+                    (MARKS / "start-{i}").touch()
+                    started = lambda: len(list(MARKS.glob("start-*")))
+                    deadline = time.monotonic() + 10  # J classes must overlap: a smaller pool stalls here
+                    while started() < want and time.monotonic() < deadline:
+                        time.sleep(0.01)
+                    if started() < want:
+                        (MARKS / "timeout-{i}").touch()
+                    extra = time.monotonic() + 1.5  # a larger pool would start class J+1 meanwhile
+                    while started() < want + 1 and time.monotonic() < extra:
+                        time.sleep(0.01)
+                    running = started() - len(list(MARKS.glob("end-*")))
+                    (MARKS / "peak-{i}").write_text(str(running))
+                    (MARKS / "end-{i}").touch()
+            """
+        for i in range(6):
+            self.module(f"test_overlap{i}", body.replace("{i}", str(i)))
+        for args, env, jobs in (((), {"SDLC_TEST_JOBS": "2"}, 2), (("--jobs", "4"), {"SDLC_TEST_JOBS": "2"}, 4)):
+            with self.subTest(jobs=jobs):
+                for mark in marks.iterdir():
+                    mark.unlink()
+                proc = self.run_runner(*args, env={**env, "SYNTH_MARKS": str(marks), "SYNTH_JOBS": str(jobs)})
+                self.assertEqual(proc.returncode, 0, proc.stdout)
+                self.assertEqual(sorted(m.name for m in marks.glob("timeout-*")), [], "fewer than J classes ever ran together")
+                peak = max(int(m.read_text()) for m in marks.glob("peak-*"))
+                self.assertEqual(peak, jobs)
 
     def test_warning_options_reach_the_shards(self):
         self.module("test_warn", """

@@ -1,0 +1,26 @@
+{
+  "schema": 1,
+  "id": "class-scheduling",
+  "kind": "repository",
+  "title": "Run each test class in its own process from a bounded pool",
+  "base": {
+    "ref": "main",
+    "commit": "932e69c4b479abafef536aa9bbb807c01b702e52"
+  },
+  "baseline": {},
+  "write_scope": [
+    "scripts/tests/run.py",
+    "scripts/tests/test_run.py",
+    "scripts/README.md"
+  ],
+  "approvals": [
+    {
+      "artifact": "plan.md",
+      "sha256": "sha256:03bc02340b4d585c8be1a2a276c75beabaf62eac13dd164176e80df2275870a1",
+      "by": "naelonambul",
+      "at": "2026-11-03T02:21:56Z",
+      "write_scope_sha256": "sha256:a0e78379d8aa09a66ef4b7894d87c753734b816df248bd10bfa0c4ef91a50cce",
+      "note": "Owner in session: \"\uc2b9\uc778\" (approving class-scheduling plan revision 2, commit b74b7d8, sha256 03bc0234...)"
+    }
+  ]
+}
