@@ -9,19 +9,66 @@ ROOT = Path(__file__).resolve().parents[2]
 WORKFLOW = ROOT / ".github/workflows/repository.yml"
 
 
+# The only lines the control-plane-tests job may contain, after comments are removed. Anything else
+# (a quoted key, if, continue-on-error, env, shell, a continuation line, a block scalar) could change
+# what runs or mute a failure in a way this plain-text check cannot read, so it is refused.
+JOB_LINES = [
+    ("job", re.compile(r"    runs-on: ubuntu-latest")),
+    ("job", re.compile(r"    timeout-minutes: \d+")),
+    ("job", re.compile(r"    steps:")),
+    ("uses", re.compile(r"      - uses: [\w.-]+/[\w.-]+@[0-9a-f]{40}")),
+    ("with", re.compile(r"        with:")),
+    ("input", re.compile(r"          [a-z][a-z0-9-]*: \S.*")),
+    ("run", re.compile(r"      - run: ([^\s|>'\"].*)")),
+]
+TOP_LEVEL_KEYS = ["name", "on", "permissions", "concurrency", "env", "jobs"]  # in this order, unquoted
+TOP_LEVEL_ENV = ["REPO_ARGS", "VERIFY_ARGS"]  # inherited by every job, so fixed
+
+
 def control_plane_job_findings(text: str, argv: list[str]) -> list[str]:
     """Why the control-plane-tests job could pass without running the tests outside repo.py, or []."""
-    match = re.search(r"(?ms)^  control-plane-tests:\n(.*?)(?=^  [a-z0-9-]+:\n|\Z)", text)
-    if not match:
-        return ["no control-plane-tests job"]
-    block = "\n".join(re.sub(r"(^|\s)#.*$", "", line) for line in match.group(1).splitlines())
     findings = []
-    runs = [r.strip() for r in re.findall(r"(?m)^\s+(?:- )?run:(.*)$", block)]
+    lines = text.splitlines()
+    top = [line.rstrip() for line in lines if line and not line[0].isspace() and not line.startswith("#")]
+    top_keys = [m.group(1) if (m := re.fullmatch(r"([a-z]+):.*", line)) else line for line in top]
+    if top_keys != TOP_LEVEL_KEYS:
+        findings.append(f"top-level keys {top_keys} != {TOP_LEVEL_KEYS}: e.g. defaults: can change every run step's shell")
+    if "env:" in top:
+        env_keys = []
+        for line in lines[lines.index("env:") + 1 :]:
+            if line and not line[0].isspace():
+                break  # the next top-level key
+            if not line.strip() or line.startswith("    ") or line.strip().startswith("#"):
+                continue  # blank, comment, or a continuation of the folded REPO_ARGS value
+            m = re.fullmatch(r"  ([A-Z_]+):.*", line)
+            env_keys.append(m.group(1) if m else line.strip())
+        if env_keys != TOP_LEVEL_ENV:
+            findings.append(f"top-level env keys {env_keys} != {TOP_LEVEL_ENV}")
+    job_heads = [line for line in lines if re.fullmatch(r"""  ["']?control-plane-tests["']?:\s*""", line)]
+    if len(job_heads) != 1 or job_heads[0] != "  control-plane-tests:":
+        findings.append(f"control-plane-tests must be defined exactly once, unquoted: {job_heads}")
+    match = re.search(r"(?ms)^  control-plane-tests:\n(.*?)(?=^  \S|\Z)", text)
+    if not match:
+        return findings + ["no control-plane-tests job"]
+    runs, previous = [], None
+    for line in match.group(1).splitlines():
+        line = re.sub(r"\s+#.*$", "", line).rstrip()
+        if not line:
+            continue
+        kind = next((k for k, pattern in JOB_LINES if pattern.fullmatch(line)), None)
+        if kind == "with" and previous not in ("uses", "input"):
+            kind = None
+        if kind == "input" and previous not in ("with", "input"):
+            kind = None
+        if kind is None:
+            findings.append(f"unexpected line in control-plane-tests: {line.strip()}")
+            continue
+        if kind == "run":
+            runs.append(JOB_LINES[-1][1].fullmatch(line).group(1))
+        previous = kind
     expected = ["python3 -m unittest scripts.tests.test_run", " ".join(argv)]
     if runs != expected:
         findings.append(f"run steps {runs} != {expected}")
-    for key in re.findall(r"(?m)^\s+(?:- )?(if|continue-on-error|working-directory):", block):
-        findings.append(f"step sets {key}:")
     findings += [f"run step uses repo.py: {r}" for r in runs if "repo.py" in r]
     return findings
 
@@ -86,6 +133,17 @@ class WorkflowInvariants(unittest.TestCase):
             "step if": (f"      - run: {runner}", f"      - if: false\n        run: {runner}"),
             "continue-on-error": (f"      - run: {runner}", f"      - continue-on-error: true\n        run: {runner}"),
             "through repo.py": (f"run: {runner}", "run: python3 scripts/repo.py verify --group core"),
+            "continuation line": (f"      - run: {runner}\n", f"      - run: {runner}\n          || true\n"),
+            "block scalar": (f"      - run: {runner}\n", f"      - run: |\n          {runner} || true\n"),
+            "quoted if": (f"      - run: {runner}", f'      - "if": false\n        run: {runner}'),
+            "quoted continue-on-error": (f"      - run: {runner}", f'      - "continue-on-error": true\n        run: {runner}'),
+            "shell": (f"      - run: {runner}", f"      - shell: bash\n        run: {runner}"),
+            "job env": ("    timeout-minutes: 15\n    steps:", "    timeout-minutes: 15\n    env:\n      SDLC_TEST_JOBS: 1\n    steps:"),
+            "top-level defaults": ("\njobs:\n", "\ndefaults:\n  run:\n    shell: bash -c 'exit 0' {0}\n\njobs:\n"),
+            "extra top-level env": ("\nenv:\n", "\nenv:\n  PYTHONPATH: /tmp/evil\n"),
+            "quoted top-level defaults": ("\njobs:\n", "\n\"defaults\":\n  run:\n    shell: bash -c 'exit 0' {0}\n\njobs:\n"),
+            "quoted top-level env key": ("\nenv:\n", "\nenv:\n  \"PYTHONPATH\": /tmp/evil\n"),
+            "second definition of the job": ("\n  status:\n", "\n  \"control-plane-tests\":\n    runs-on: ubuntu-latest\n    steps:\n      - run: true\n\n  status:\n"),
         }
         for name, (old, new) in mutations.items():
             with self.subTest(name):

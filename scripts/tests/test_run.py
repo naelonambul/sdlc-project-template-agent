@@ -111,7 +111,7 @@ class Runner(unittest.TestCase):
             """)
         proc = self.run_runner("--jobs", "3")
         self.assertEqual(proc.returncode, 1)
-        self.assertRegex(self.summary(proc), r"^FAILED: .*no test summary")
+        self.assertRegex(self.summary(proc), r"^FAILED: .*no result")
 
     def test_shards_run_exactly_the_discovered_tests(self):
         """A module's load_tests selects one failing method; reloading the whole class would run a passing one instead."""
@@ -132,18 +132,34 @@ class Runner(unittest.TestCase):
         self.assertEqual(proc.returncode, 1, proc.stdout)
         self.assertIn("the discovered test ran", proc.stdout)
 
-    def test_test_output_cannot_stand_in_for_the_summary(self):
+    def test_a_printed_summary_does_not_change_the_verdict(self):
         self.module("test_fake", """
             import sys
             import unittest
 
             class Fake(unittest.TestCase):
                 def test_prints_a_summary(self):
-                    sys.stderr.write("Ran 5 tests in 0.001s\\n\\nOK\\n")
+                    sys.stderr.write("Ran 5 tests in 0.001s\\n\\nFAILED (failures=5)\\n")
+            """)
+        proc = self.run_runner()
+        self.assertEqual(proc.returncode, 0, proc.stdout)
+        self.assertRegex(self.summary(proc), r"^OK: ran 1 tests")
+
+    def test_a_printed_summary_cannot_stand_in_for_a_result(self):
+        self.module("test_fake", """
+            import os
+            import sys
+            import unittest
+
+            class Fake(unittest.TestCase):
+                def test_prints_a_summary_and_exits(self):
+                    sys.stderr.write("Ran 1 test in 0.001s\\n\\nOK\\n")
+                    sys.stderr.flush()
+                    os._exit(0)
             """)
         proc = self.run_runner()
         self.assertEqual(proc.returncode, 1, proc.stdout)
-        self.assertRegex(self.summary(proc), r"^FAILED: .*ambiguous test summary")
+        self.assertRegex(self.summary(proc), r"^FAILED: .*no result")
 
     def test_test_stdout_does_not_disturb_the_summary(self):
         self.module("test_noisy", """
@@ -174,6 +190,238 @@ class Runner(unittest.TestCase):
         proc = self.run_runner()
         self.assertEqual(proc.returncode, 0, proc.stdout)
         self.assertRegex(self.summary(proc), r"^OK: ran 1 tests")
+
+    # -- the gate must not pass when test code ends a process early -------------
+
+    FAILING = """
+        import unittest
+
+        class Fails(unittest.TestCase):
+            def test_fails(self):
+                self.fail("must be reported")
+        """
+
+    def test_load_tests_system_exit_fails_discovery(self):
+        self.module("test_fails", self.FAILING)
+        self.module("test_quits", """
+            def load_tests(loader, tests, pattern):
+                raise SystemExit(0)
+            """)
+        proc = self.run_runner()
+        self.assertEqual(proc.returncode, 1, proc.stdout)
+        self.assertRegex(self.summary(proc), r"^FAILED: discovery did not complete")
+
+    def test_os_exit_at_import_fails_discovery(self):
+        self.module("test_fails", self.FAILING)
+        self.module("test_quits", "import os\nos._exit(0)\n")
+        proc = self.run_runner()
+        self.assertEqual(proc.returncode, 1, proc.stdout)
+        self.assertRegex(self.summary(proc), r"^FAILED: discovery did not complete")
+
+    def test_sys_exit_at_import_is_a_discovery_error(self):
+        self.module("test_fails", self.FAILING)
+        self.module("test_quits", "import sys\nsys.exit(0)\n")
+        proc = self.run_runner()
+        self.assertEqual(proc.returncode, 1, proc.stdout)
+        self.assertRegex(self.summary(proc), r"^FAILED: discovery")
+
+    def test_system_exit_in_the_last_teardown_leaves_no_result(self):
+        self.module("test_teardown", """
+            import sys
+            import unittest
+
+            class Quits(unittest.TestCase):
+                @classmethod
+                def tearDownClass(cls):
+                    sys.exit(0)
+
+                def test_a(self):
+                    pass
+
+                def test_b(self):
+                    pass
+            """)
+        proc = self.run_runner()
+        self.assertEqual(proc.returncode, 1, proc.stdout)
+        self.assertRegex(self.summary(proc), r"^FAILED: .*no result")
+
+    def test_system_exit_inside_a_test_is_an_error(self):
+        self.module("test_inside", """
+            import sys
+            import unittest
+
+            class Inside(unittest.TestCase):
+                def test_exits(self):
+                    sys.exit(0)
+            """)
+        proc = self.run_runner()
+        self.assertEqual(proc.returncode, 1, proc.stdout)
+        self.assertRegex(self.summary(proc), r"^FAILED: .*errors=1")
+
+    def test_a_test_that_never_finishes_fails(self):
+        self.module("test_unfinished", """
+            import unittest
+
+            class Unfinished(unittest.TestCase):
+                def run(self, result=None):
+                    result.startTest(self)
+
+                def test_a(self):
+                    pass
+            """)
+        proc = self.run_runner()
+        self.assertEqual(proc.returncode, 1, proc.stdout)
+        self.assertRegex(self.summary(proc), r"^FAILED: .*test did not finish")
+
+    # -- fixtures and outcomes ------------------------------------------------------
+
+    def test_set_up_class_skip_counts_the_class_as_skipped(self):
+        self.classes(1)
+        self.module("test_fixture", """
+            import unittest
+
+            class NoTool(unittest.TestCase):
+                @classmethod
+                def setUpClass(cls):
+                    raise unittest.SkipTest("tool missing")
+
+                def test_a(self):
+                    pass
+
+                def test_b(self):
+                    pass
+            """)
+        proc = self.run_runner("--jobs", "2")
+        self.assertEqual(proc.returncode, 0, proc.stdout)
+        self.assertRegex(self.summary(proc), r"^OK: ran 4 tests .*skipped=2")
+
+    def test_set_up_module_skip_covers_only_that_module(self):
+        self.module("test_skipmod", """
+            import unittest
+
+            def setUpModule():
+                raise unittest.SkipTest("module unavailable")
+
+            class One(unittest.TestCase):
+                def test_a(self):
+                    pass
+
+            class Two(unittest.TestCase):
+                def test_b(self):
+                    pass
+            """)
+        self.module("test_sibling", """
+            import unittest
+
+            class Sibling(unittest.TestCase):
+                def test_runs(self):
+                    self.fail("the sibling module ran")
+            """)
+        proc = self.run_runner("--jobs", "1")
+        self.assertEqual(proc.returncode, 1, proc.stdout)
+        self.assertIn("the sibling module ran", proc.stdout)
+        (self.top / "synth" / "test_sibling.py").unlink()
+        self.module("test_skipmod_extra", PASSING.format(name="Extra"))  # a module whose name extends the skipped one
+        proc = self.run_runner("--jobs", "1")
+        self.assertEqual(proc.returncode, 0, proc.stdout)
+        self.assertRegex(self.summary(proc), r"^OK: ran 4 tests .*skipped=2\)")
+
+    def test_a_failing_shard_still_counts_its_fixture_skips(self):
+        self.module("test_mixed", """
+            import unittest
+
+            class NoTool(unittest.TestCase):
+                @classmethod
+                def setUpClass(cls):
+                    raise unittest.SkipTest("tool missing")
+
+                def test_a(self):
+                    pass
+
+                def test_b(self):
+                    pass
+
+            class Fails(unittest.TestCase):
+                def test_fails(self):
+                    self.fail("must be reported")
+            """)
+        proc = self.run_runner("--jobs", "1")
+        self.assertEqual(proc.returncode, 1, proc.stdout)
+        self.assertRegex(self.summary(proc), r"^FAILED: ran 3 tests in 1 shard \(failures=1, errors=0, skipped=2\)")
+
+    def test_set_up_class_error_fails(self):
+        self.module("test_setup_error", """
+            import unittest
+
+            class Broken(unittest.TestCase):
+                @classmethod
+                def setUpClass(cls):
+                    raise RuntimeError("setup broke")
+
+                def test_a(self):
+                    pass
+            """)
+        proc = self.run_runner()
+        self.assertEqual(proc.returncode, 1, proc.stdout)
+        self.assertIn("setup broke", proc.stdout)
+        self.assertRegex(self.summary(proc), r"^FAILED: .*failed")
+
+    def test_tear_down_class_skip_fails(self):
+        self.module("test_teardown_skip", """
+            import unittest
+
+            class LateSkip(unittest.TestCase):
+                @classmethod
+                def tearDownClass(cls):
+                    raise unittest.SkipTest("too late")
+
+                def test_a(self):
+                    pass
+            """)
+        proc = self.run_runner()
+        self.assertEqual(proc.returncode, 1, proc.stdout)
+        self.assertRegex(self.summary(proc), r"^FAILED: .*unexpected fixture skip")
+
+    def test_subtest_and_expected_outcomes(self):
+        cases = {
+            "failing subTest": ("""
+                def test_sub(self):
+                    for i in range(2):
+                        with self.subTest(i=i):
+                            self.assertEqual(i, 0)
+                """, 1),
+            "expected failure that fails": ("""
+                @unittest.expectedFailure
+                def test_xfail(self):
+                    self.fail("known")
+                """, 0),
+            "unexpected success": ("""
+                @unittest.expectedFailure
+                def test_xpass(self):
+                    pass
+                """, 1),
+        }
+        for name, (body, code) in cases.items():
+            with self.subTest(name):
+                source = "import unittest\n\nclass Outcome(unittest.TestCase):\n" + textwrap.indent(textwrap.dedent(body), "    ")
+                (self.top / "synth" / "test_outcome.py").write_text(source)
+                proc = self.run_runner()
+                self.assertEqual(proc.returncode, code, proc.stdout)
+
+    def test_duplicate_test_ids_are_refused(self):
+        self.module("test_dup", """
+            import unittest
+
+            class Case(unittest.TestCase):
+                def test_a(self):
+                    pass
+
+            def load_tests(loader, tests, pattern):
+                return unittest.TestSuite([Case("test_a"), Case("test_a")])
+            """)
+        proc = self.run_runner()
+        self.assertEqual(proc.returncode, 1, proc.stdout)
+        self.assertRegex(self.summary(proc), r"^FAILED: .*duplicate test id")
 
     def test_killed_shard_fails_the_run(self):
         self.module("test_kill", """
