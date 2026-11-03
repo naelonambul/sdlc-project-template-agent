@@ -1,0 +1,25 @@
+{
+  "schema": 1,
+  "id": "ci-dedupe",
+  "kind": "repository",
+  "title": "Run the CI control-plane test job with the shard runner",
+  "base": {
+    "ref": "main",
+    "commit": "42d0bca4d0111ecd3b9b4df11049ad3af461b771"
+  },
+  "baseline": {},
+  "write_scope": [
+    ".github/workflows/repository.yml",
+    "scripts/tests/test_workflow.py"
+  ],
+  "approvals": [
+    {
+      "artifact": "plan.md",
+      "sha256": "sha256:4d2bb8746d89d8e18987e5327870f9a3eaf957abda13b681725938cc786719b8",
+      "by": "naelonambul",
+      "at": "2026-11-02T23:18:43Z",
+      "write_scope_sha256": "sha256:690cea5a7f10583802b866cb1fe6c4b132dfbcea7062e5ce16464eaa325764db",
+      "note": "Owner in session: \"\uc2b9\uc778\" (approving ci-dedupe plan revision 2, commit d8937ca, sha256 4d2bb874...)"
+    }
+  ]
+}
