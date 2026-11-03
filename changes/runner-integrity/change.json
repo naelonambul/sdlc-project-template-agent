@@ -1,0 +1,17 @@
+{
+  "schema": 1,
+  "id": "runner-integrity",
+  "kind": "repository",
+  "title": "Make the shard runner and the workflow invariant unable to pass without running the tests",
+  "base": {
+    "ref": "main",
+    "commit": "217fd99d45598057133af3c4ac935bd0c40875ce"
+  },
+  "baseline": {},
+  "write_scope": [
+    "scripts/tests/run.py",
+    "scripts/tests/test_run.py",
+    "scripts/tests/test_workflow.py"
+  ],
+  "approvals": []
+}
