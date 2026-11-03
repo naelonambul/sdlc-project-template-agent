@@ -481,7 +481,10 @@ class Runner(unittest.TestCase):
         self.assertRegex(self.summary(proc), r"^OK: ran 8 tests in 1 shard\b")
 
     def test_jobs_sets_the_exact_concurrency(self):
-        """Each class waits until J classes have started, then records how many are running: the peak must be exactly J."""
+        """Each class waits until J classes have started (and briefly for a J+1th), then records how many are running.
+
+        The peak must be exactly J: a smaller pool never reaches J and times out; a larger one overlaps J+1.
+        """
         marks = self.top / "marks"
         marks.mkdir()
         body = """
@@ -496,10 +499,16 @@ class Runner(unittest.TestCase):
                 def test_overlap(self):
                     want = int(os.environ["SYNTH_JOBS"])
                     (MARKS / "start-{i}").touch()
-                    deadline = time.monotonic() + 10
-                    while len(list(MARKS.glob("start-*"))) < want and time.monotonic() < deadline:
+                    started = lambda: len(list(MARKS.glob("start-*")))
+                    deadline = time.monotonic() + 10  # J classes must overlap: a smaller pool stalls here
+                    while started() < want and time.monotonic() < deadline:
                         time.sleep(0.01)
-                    running = len(list(MARKS.glob("start-*"))) - len(list(MARKS.glob("end-*")))
+                    if started() < want:
+                        (MARKS / "timeout-{i}").touch()
+                    extra = time.monotonic() + 1.5  # a larger pool would start class J+1 meanwhile
+                    while started() < want + 1 and time.monotonic() < extra:
+                        time.sleep(0.01)
+                    running = started() - len(list(MARKS.glob("end-*")))
                     (MARKS / "peak-{i}").write_text(str(running))
                     (MARKS / "end-{i}").touch()
             """
@@ -511,6 +520,7 @@ class Runner(unittest.TestCase):
                     mark.unlink()
                 proc = self.run_runner(*args, env={**env, "SYNTH_MARKS": str(marks), "SYNTH_JOBS": str(jobs)})
                 self.assertEqual(proc.returncode, 0, proc.stdout)
+                self.assertEqual(sorted(m.name for m in marks.glob("timeout-*")), [], "fewer than J classes ever ran together")
                 peak = max(int(m.read_text()) for m in marks.glob("peak-*"))
                 self.assertEqual(peak, jobs)
 
