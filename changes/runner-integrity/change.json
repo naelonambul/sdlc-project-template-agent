@@ -13,5 +13,14 @@
     "scripts/tests/test_run.py",
     "scripts/tests/test_workflow.py"
   ],
-  "approvals": []
+  "approvals": [
+    {
+      "artifact": "plan.md",
+      "sha256": "sha256:510a1fec4446e7d5cca08955cc03f6e8c9fbfdcba86784f176087a1a64c33e36",
+      "by": "naelonambul",
+      "at": "2026-11-03T01:26:56Z",
+      "write_scope_sha256": "sha256:dd2ce8a831d04d08d670fe1a70ccb370252556da877458b051456084c9df01a1",
+      "note": "Owner in session: \"\uc2b9\uc778\" (approving runner-integrity plan revision 2, commit f796fb6, sha256 510a1fec...)"
+    }
+  ]
 }
