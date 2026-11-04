@@ -657,7 +657,10 @@ class Closure(RepoCase):
         self.establish_baseline()
         self.commit("one more")
         clone = self.root.parent / "shallow"
-        subprocess.run(["git", "clone", "-q", "--depth", "1", f"file://{self.root}", str(clone)], check=True, capture_output=True)
+        subprocess.run(
+            ["git", "clone", "-q", "--depth", "1", f"file://{self.root}", str(clone)],
+            env={**os.environ, **support.GIT_ENV}, check=True, capture_output=True,
+        )
         result = self.status(cwd=clone)
         self.assertEqual(result["by_id"]["init"]["closure"], "invalid")
         self.assertIn("closure-history", self.codes(result, "init"))
