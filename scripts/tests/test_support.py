@@ -11,6 +11,7 @@ import types
 import unittest
 import warnings
 from pathlib import Path
+from unittest import mock
 
 from scripts.tests import support
 from scripts.tests.support import REPO_PY, RepoCase
@@ -230,6 +231,23 @@ class InProcessIsolation(RepoCase):
         ps = subprocess.run(["ps", "-A", "-o", "ppid=,stat=,command="], capture_output=True, text=True, check=True).stdout
         mine = str(os.getpid())
         return [line for line in ps.splitlines() if line.split(None, 1)[0] == mine and "cat-file" in line]
+
+
+class NoAutoMaintenance(RepoCase):
+    """Fixture Git commands never start detached auto maintenance, which races copies and cleanup."""
+
+    def test_commit_starts_no_maintenance(self):
+        trace = Path(self._tmp.name) / "trace"
+        self.write("a.txt", "a\n")
+        with mock.patch.dict(support.GIT_ENV, {"GIT_TRACE": str(trace)}):
+            self.commit("traced")
+        self.assertIn("commit", trace.read_text())
+        self.assertNotIn("maintenance run", trace.read_text())
+
+    def test_template_config_disables_maintenance(self):
+        env = {**os.environ, "GIT_CONFIG_GLOBAL": os.devnull, "GIT_CONFIG_NOSYSTEM": "1"}
+        out = subprocess.run(["git", "config", "--get", "maintenance.auto"], cwd=self.root, env=env, capture_output=True, text=True)
+        self.assertEqual(out.stdout.strip(), "false")
 
 
 if __name__ == "__main__":

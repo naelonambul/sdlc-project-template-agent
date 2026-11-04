@@ -29,6 +29,11 @@ GIT_ENV = {
     "GIT_COMMITTER_EMAIL": "fixture@example.invalid",
     "GIT_CONFIG_GLOBAL": os.devnull,
     "GIT_CONFIG_NOSYSTEM": "1",
+    # `git commit` would start detached auto maintenance, which creates and removes
+    # `objects/maintenance.lock` after commit returns and races copytree and cleanup.
+    "GIT_CONFIG_COUNT": "1",
+    "GIT_CONFIG_KEY_0": "maintenance.auto",
+    "GIT_CONFIG_VALUE_0": "false",
 }
 # Snapshot before any test patches GIT_ENV, so the shared template never sees a patch.
 DEFAULT_GIT_ENV = dict(GIT_ENV)
@@ -55,6 +60,8 @@ def _template() -> Path:
             subprocess.run(["git", *args], cwd=root, env=env, check=True, capture_output=True)
 
         git("init", "-q", "-b", "main")
+        # Every test repository is a copy, so Git calls made without GIT_ENV stay covered too.
+        git("config", "maintenance.auto", "false")
         (root / "AGENTS.md").write_text("# Repository Agent Instructions\n")
         (root / "intent.md").write_text(UNESTABLISHED + "# Intent\n")
         (root / "spec.md").write_text(UNESTABLISHED + "# Specification\n")
