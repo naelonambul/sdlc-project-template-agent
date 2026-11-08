@@ -16,7 +16,7 @@ The lifecycle rules are executable. `python3 scripts/repo.py status --change <id
 
 ## Develop each artifact in order
 
-- **Intent.** Interrogate ambiguity before drafting: problem, outcome, affected users and systems, constraints, scope, success criteria, and open questions. Any agent-specific interrogation interface is a convenience only. The intent describes the product and its outcomes. Do not put SDLC process goals in it: CI, pull request, verification, check registration, or closure criteria belong in the change's plan.
+- **Intent.** Interrogate ambiguity before drafting: problem, outcome, affected users and systems, constraints, scope, success criteria, and open questions. Any agent-specific interrogation interface is a convenience only. The intent describes the product and its outcomes. Do not put SDLC process goals in it: CI, pull request, verification, check registration, or completion criteria belong in the change's plan.
 - **Spec.** Only after the intent is approved. Turn it into requirements, behavior, design, interfaces, data, dependencies, risks, and acceptance criteria. Carry unresolved questions forward instead of inventing answers.
   For `product-init` and `architecture` changes, the spec's Architecture section names the top-level modules and what each owns, the allowed dependency direction, and where a new feature goes. Follow the stack's convention; this template prescribes no layout. Keep modules cohesive, because `write_scope`, check `paths`, parallel units, and verify feature files only stay narrow when the code does. When a native tool can enforce the boundaries, the plan registers it as a check (`repository-quality` skill).
 - **Plan.** Only after the spec is approved, or inherited for kinds that carry no spec. Write it so an agent with no conversation history can implement it: files and components, order of work, proof, risks, and rollback. Challenge the riskiest step. Make each Order-of-work step name the files it changes and one command that proves it, so it can become a unit brief.
@@ -59,12 +59,11 @@ A file the current task did not create may belong to the owner's IDE or tools, w
 
 An out-of-scope path is reported as out of scope. Never delete it, regenerate it, or alter ignore rules to make `status` pass. Files this session demonstrably created are not covered.
 
-## Close
+## Finish
 
-Follow the Lifecycle and Closure sections of `changes/README.md`, which define the order, the evidence rules, and what to do after a fix. In addition:
+Follow the Lifecycle section of `changes/README.md`: replace the root with any accepted `intent.md`/`spec.md` copy, run `repo.py verify --change <id> --full`, push, and open one pull request. The merged pull request closes the change. In addition:
 
 - When the change touches `AGENTS.md`, a skill or the guard, run the probes in `docs/agent-surfaces.md` once and record the result there.
-- `git add` the new `closure.json`; `commit -a` does not pick up new files.
 - Make the last push yourself: the owner can approve only a pull request the agent identity authored and pushed last (`docs/host-setup.md`).
 - A change that touches `.github/workflows/**` needs one owner push before yours; follow "Workflow changes" in `docs/host-setup.md`.
 
@@ -77,4 +76,4 @@ Read the failure before changing anything, under the agent's own identity and ne
 - **Flake or infrastructure:** the App cannot rerun a job, because its Actions permission is read-only, so ask the owner for one rerun. An identical second failure is not a flake; read the logs again and reclassify.
 - **In `.github/workflows/**`:** the App cannot push there. Follow "Workflow changes" in `docs/host-setup.md`.
 
-Any new commit changes the tree, so rerun `repo.py verify --change <id> --full` and `close` before pushing again. Never weaken a check to get a green run, and green does not replace the owner's review.
+Any new commit changes the tree, so rerun `repo.py verify --change <id> --full` before pushing again. Never weaken a check to get a green run, and green does not replace the owner's review.

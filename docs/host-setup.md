@@ -14,14 +14,14 @@ The repository has two actors: the owner, and a coding agent that works under it
 
 The current stage is enforced by the ruleset, not by habit: with one required approval and `require_last_push_approval`, GitHub refuses the merge until the owner has approved the bot's last push. The switch to the target stage is one settings change, setting the required approval count to 0, after which the agent merges through the App's existing pull-request permission. Nothing in the repository changes.
 
-The one rule this imposes on the agent: **the bot makes the last push.** A pull-request author cannot approve their own pull request, and the approver cannot be the last pusher. Because the bot authors and last-pushes, the owner can approve. If the owner has to push after the agent, the agent pushes once more afterwards, with a real change such as refreshed closure evidence, before the owner reviews.
+The one rule this imposes on the agent: **the bot makes the last push.** A pull-request author cannot approve their own pull request, and the approver cannot be the last pusher. Because the bot authors and last-pushes, the owner can approve. If the owner has to push after the agent, the agent pushes once more afterwards, with a real change, before the owner reviews.
 
 CI enforces the author. When the repository variable `AGENT_LOGIN` is set, the `identity` job fails any pull request not authored by that login, and with it `summary`. A session that pushes under the owner's own token breaks the last-push rule: the owner is then the last pusher and cannot approve. Let the bot push last. To work without the agent, the owner clears the variable, which disables the check.
 
 ## Merge policy
 
-- Allow **squash merge** only, with one change per pull request. `repo.py` derives each change's closure anchor from the first-parent history of `main`, so merge commits also work if a project prefers them. Rebase merges do not, once a closure has been refreshed.
-- Keep `main` linear enough that first-parent history is meaningful: no direct pushes that bypass pull requests.
+- Allow **squash merge** only, with one change per pull request, so each change lands as one commit. `repo.py` treats a packet as merged once its `change.json` is on `main`, so merge commits also work if a project prefers them.
+- No direct pushes that bypass pull requests.
 - In the repository settings, allow squash merging only and disable merge commits and rebase merging.
 - Optionally, enable automatic deletion of head branches.
 
@@ -32,7 +32,7 @@ Where the plan allows it (public repositories, or private repositories on GitHub
 | Rule | Setting | Why |
 |---|---|---|
 | Restrict deletions | on | |
-| Block force pushes | on | first-parent history anchors closures |
+| Block force pushes | on | merged history and reviews stay as they were approved |
 | Require a pull request | 1 approval; dismiss stale approvals; require approval of the most recent push; squash only | the current trust stage; set approvals to 0 for the target stage |
 | Require status checks | `summary`, source GitHub Actions; branches must be up to date | the validated candidate is the merge candidate |
 
@@ -67,7 +67,7 @@ Import-ready ruleset (`main-protection.json`):
 
 To apply it, either go to **Settings → Rules → Rulesets → New ruleset → Import a ruleset**, or run `gh api -X POST repos/OWNER/REPO/rulesets --input main-protection.json`. `15368` is the GitHub Actions app.
 
-Without a ruleset (for example a private repository on GitHub Free, where the rulesets API returns 403), nothing on the host enforces either stage: a red `summary` does not block the merge button, and anyone with write access can merge. Keep squash-only in the repository settings by hand, read the checks before merging, and treat the post-merge `push` run on `main`, which runs the full suite and validates closures, as the authoritative gate on the merged tree.
+Without a ruleset (for example a private repository on GitHub Free, where the rulesets API returns 403), nothing on the host enforces either stage: a red `summary` does not block the merge button, and anyone with write access can merge. Keep squash-only in the repository settings by hand, read the checks before merging, and treat the post-merge `push` run on `main`, which runs the full suite and `status` on the merged tree, as the authoritative gate on the merged tree.
 
 ## The agent's identity
 
@@ -112,16 +112,16 @@ The change's `write_scope` includes the workflow path, and the plan says the han
 
 | Step | Who | Action |
 |---|---|---|
-| 1 | Agent | Commit the workflow change as its own commit, on `change/<id>`, with any other work before it. Run `repo.py verify --change <id> --full` and `repo.py close`, and commit the closure on top. Push nothing that contains the workflow commit. |
+| 1 | Agent | Commit the workflow change as its own commit, on `change/<id>`, with any other work before it. Commit at least one more change on top, such as the rest of the work or a note in the packet, and run `repo.py verify --change <id> --full`. Push nothing that contains the workflow commit. |
 | 2 | Agent | Give the owner the workflow commit's SHA, and stop. |
 | 3 | Owner | Push up to that commit, and no further: `git push origin <sha>:refs/heads/change/<id>`. |
-| 4 | Agent | Confirm on the remote that the branch head is that SHA. Then push the closure commit and open the pull request. |
+| 4 | Agent | Confirm on the remote that the branch head is that SHA. Then push the commits on top and open the pull request. |
 | 5 | Owner | Review, approve and merge as usual. |
 
 | Question | Answer |
 |---|---|
 | Who authors the workflow commit? | The agent, normally. GitHub checks who pushes it, not who authored it. The owner may author it instead, for example when the agent's host cannot reach the owner's checkout. |
-| Who pushes last? | The agent, with the closure commit. |
+| Who pushes last? | The agent, with the commits on top of the workflow commit. |
 | Who opens the pull request? | The agent, so the `identity` job passes. |
 | Who approves? | The owner. The approver must not be the last pusher, and the agent is. |
 | Who merges? | The owner. The route gives the agent no merge authority. |
@@ -149,7 +149,7 @@ gh api repos/OWNER/REPO/pulls/PR/reviews --jq '[.[] | {user: .user.login, state,
 
 Expect the ruleset's `enforcement` to be `active` with empty `bypass_actors`, `summary` among its required status checks, the approval count that matches the current stage, and the repository merge settings to allow squash only. Classic branch protection shows up in `rules/branches/main` as an empty list; check it in the UI instead.
 
-To verify the workflow route, run the handoff once on a real or trivial workflow change, with the pull request commands above. Expect `author` to be `AGENT_LOGIN`, the head commit to be the agent's closure commit, and the owner's approval to be accepted without any merge permission added to the App. Then confirm under the App that a direct workflow push is still refused: GitHub rejects it with a message about the `workflows` permission.
+To verify the workflow route, run the handoff once on a real or trivial workflow change, with the pull request commands above. Expect `author` to be `AGENT_LOGIN`, the head commit to be the agent's commit on top of the workflow commit, and the owner's approval to be accepted without any merge permission added to the App. Then confirm under the App that a direct workflow push is still refused: GitHub rejects it with a message about the `workflows` permission.
 
 ## What approval means here
 

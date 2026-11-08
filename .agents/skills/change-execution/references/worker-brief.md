@@ -28,7 +28,7 @@ You are a worker implementing one unit of an approved change. You cannot ask que
 **FORBIDDEN.**
 - Changing any path not listed under FILES.
 - Modifying, weakening or deleting any PROTECTED file.
-- Editing anything under `changes/`, any `approvals`, `closure.json`, the root `intent.md` or `spec.md`, CI configuration, or `checks.json`.
+- Editing anything under `changes/`, any `approvals`, the root `intent.md` or `spec.md`, CI configuration, or `checks.json`.
 - Committing, pushing, or changing branches.
 - Installing dependencies or using the network. <or: "except: ...">
 - Skipping, disabling or weakening any check or test.

@@ -2,14 +2,12 @@
 
 from __future__ import annotations
 
-import gc
 import json
 import os
 import subprocess
 import sys
 import types
 import unittest
-import warnings
 from pathlib import Path
 from unittest import mock
 
@@ -211,26 +209,6 @@ class InProcessIsolation(RepoCase):
                     self.assertIn("RuntimeError: boom", proc.stderr)
                 if name == "system exit":
                     self.assertEqual((proc.returncode, proc.stderr), (1, "message\n"))
-
-    def test_no_object_process_outlives_the_call(self):
-        """approve and close on a closed change read objects; the git process must be closed, not garbage-collected."""
-        self.establish_baseline()
-        for args in (["approve", "init", "plan.md", "--by", "owner"], ["close", "init", "--evidence", "ci"]):
-            with self.subTest(args[0]), warnings.catch_warnings(record=True) as caught:
-                warnings.simplefilter("always", ResourceWarning)
-                proc = support.invoke(support.load(REPO_PY), REPO_PY, args, None, self.root)
-                gc.collect()
-                self.assertEqual(proc.returncode, 1, proc.stderr)
-                self.assertIn("already closed", proc.stderr)
-                leaks = [w for w in caught if issubclass(w.category, ResourceWarning)]
-                self.assertEqual(leaks, [], [str(w.message) for w in leaks])
-                self.assertEqual(self.object_children(), [])
-
-    @staticmethod
-    def object_children():
-        ps = subprocess.run(["ps", "-A", "-o", "ppid=,stat=,command="], capture_output=True, text=True, check=True).stdout
-        mine = str(os.getpid())
-        return [line for line in ps.splitlines() if line.split(None, 1)[0] == mine and "cat-file" in line]
 
 
 class NoAutoMaintenance(RepoCase):

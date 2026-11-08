@@ -1,9 +1,0 @@
-{
-  "schema": 1,
-  "baseline": {},
-  "packet_sha256": "sha256:b21e9f2948fc2106e2c907942a7f8b767e770616055dd38da43b8a23af33a2f6",
-  "evidence": [
-    "local: python3 scripts/repo.py verify --change portable-execution -> control-plane passed (.evidence/20260924T021109343503Z/evidence.json)",
-    "local: python3 scripts/repo.py verify --full -> control-plane passed (.evidence/20260924T021125010076Z/evidence.json)"
-  ]
-}

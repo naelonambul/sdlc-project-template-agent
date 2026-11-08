@@ -1,9 +1,0 @@
-{
-  "schema": 1,
-  "baseline": {},
-  "packet_sha256": "sha256:282cf91919ee225d1cdaeaa4ca1d8b192f1ce1c5b0e6c75fb3821e1c34579c1d",
-  "tree_sha256": "sha256:bd4ef1846873f6d441fab9d8eed63a5ac69c21b4d077710ae71f6b14688cd461",
-  "evidence": [
-    ".evidence/20261102T213756600690Z/evidence.json sha256:129e52ac908777f824d2dbd5905f1d9281a82605fa3e7c912cae2f42053118ac"
-  ]
-}
