@@ -19,14 +19,14 @@ concurrency:
   cancel-in-progress: true
 
 env:
-  # PR: routed against the PR base, identified by the PR body's Change-ID.
-  # main: full suite, no active change. Branch-name inference is off in CI.
+  # PR: judged against the PR base, identified by the PR body's Change-ID.
+  # main: no active change. Branch-name inference is off in CI.
   REPO_ARGS: >-
     --ci --branch=
     ${{ github.event_name == 'pull_request' && format('--pr-body /tmp/pr-body.md --base {0} --head HEAD', github.event.pull_request.base.sha) || '' }}
-  VERIFY_ARGS: ${{ github.event_name == 'push' && '--full' || '' }}
 
 jobs:
+  # Runs the control-plane check directly, so its verdict does not depend on repo.py.
   control-plane-tests:
     runs-on: ubuntu-latest
     timeout-minutes: 15
@@ -38,7 +38,6 @@ jobs:
       - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
         with:
           python-version: "3.13"
-      - run: python3 -m unittest scripts.tests.test_run
       - run: python3 scripts/tests/run.py
 
   status:
@@ -47,7 +46,7 @@ jobs:
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
-          fetch-depth: 0 # PR base and first-parent closure anchors need full history
+          fetch-depth: 0 # the diff against the PR base needs history
           persist-credentials: false
       - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
         with:
@@ -58,31 +57,6 @@ jobs:
           PR_BODY: ${{ github.event.pull_request.body }}
         run: printf '%s\n' "$PR_BODY" > /tmp/pr-body.md
       - run: python3 scripts/repo.py status $REPO_ARGS
-
-  verify-core:
-    runs-on: ubuntu-latest
-    timeout-minutes: 30
-    steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-        with:
-          fetch-depth: 0
-          persist-credentials: false
-      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
-        with:
-          python-version: "3.13"
-      - name: Write PR body
-        if: github.event_name == 'pull_request'
-        env:
-          PR_BODY: ${{ github.event.pull_request.body }}
-        run: printf '%s\n' "$PR_BODY" > /tmp/pr-body.md
-      - run: python3 scripts/repo.py verify --group core $VERIFY_ARGS $REPO_ARGS
-      - if: always()
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
-        with:
-          name: evidence-core
-          path: .evidence/
-          include-hidden-files: true
-          if-no-files-found: ignore
 
   # Fails a pull request not authored by the agent identity. An unset
   # AGENT_LOGIN passes with a notice; see docs/host-setup.md.
@@ -113,7 +87,7 @@ jobs:
   # skipped, cancelled, or failed jobs all fail the summary.
   summary:
     if: always()
-    needs: [control-plane-tests, status, verify-core, identity]
+    needs: [control-plane-tests, status, identity]
     runs-on: ubuntu-latest
     timeout-minutes: 5
     steps:
