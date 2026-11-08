@@ -48,6 +48,7 @@ Each is its own packet with its own owner approval. Order may change after this 
   - `scripts/tests/test_new.py`: the quick-start case ends at a ready change whose pull request passes, not at a candidate closure.
   - `scripts/tests/test_guard.py`: frozen and closure cases become merged-packet cases; drop the closure shell-write cases and the `repo.py close` ask case.
   - `scripts/tests/support.py`: delete the closure-writing helper; add a helper that commits a packet to the baseline branch.
+  - `scripts/tests/test_support.py` (added to `write_scope` in revision 2): delete `InProcessIsolation.test_no_object_process_outlives_the_call` and its `object_children` helper. Its subject, the `git cat-file --batch` process that `approve` and `close` opened, no longer exists. The rest of the file is unchanged.
 - `changes/`: `git rm` the 45 packet directories that carry `closure.json`. Keep `changes/README.md`, `changes/_template/` and this packet. Rewrite `changes/README.md`: packet contents without `closure.json`, the reduced state model, a Lifecycle that ends at "pull request merges", and a short "After merge" section that replaces Closure (merged packets stay; edits need scope; undo is a new change that may be a plain revert).
 - `README.md`: workflow diagram without `closure.json`; delete Quick start step 2 (packet removal before protection); renumber.
 - `AGENTS.md`: drop the `close` command; Definition of done requires `status` passing and a complete `verify --full` without referring to `close`; guard sentence says merged packets instead of frozen packets and closures.
@@ -112,6 +113,10 @@ The owner settled these before approval:
 2. The `pre-core-lifecycle` tag stays local; it is not pushed.
 3. The agent-surface probe is waived for this change (step 9), because `optional-profiles` moves that procedure.
 4. The unapproved `harness-main-spec` packet is dropped; its branch is deleted unmerged.
+
+## Revisions
+
+- **Revision 2.** Implementation found one test outside the original `write_scope` whose subject this change removes: `scripts/tests/test_support.py`, `test_no_object_process_outlives_the_call`. Every other test passed (238 tests, 2 subtest failures, all in that one test). This revision adds `scripts/tests/test_support.py` to `write_scope` and the Files section; nothing else in the plan changes.
 
 ## Open questions
 

@@ -202,7 +202,7 @@ class CarriedRootScopeTests(NewCase):
         self.assertEqual(self.new("init", "--kind", "product-init", "--title", "t", "--scope", "spec.md").returncode, 0)
         self.assertEqual(self.change("init")["write_scope"], ["spec.md", "intent.md"])
 
-    def test_quick_start_reaches_a_valid_candidate_closure(self):
+    def test_quick_start_reaches_a_passing_pull_request(self):
         check = {"id": "check", "group": "core", "argv": [sys.executable, "-c", "print('ok')"], "cwd": ".",
                  "timeout_seconds": 30, "paths": ["**"], "requires": []}
         self.write(".gitignore", ".evidence/\n")
@@ -222,11 +222,9 @@ class CarriedRootScopeTests(NewCase):
         self.commit("baseline")
         proc = self.run_repo("verify", "--change", "init", "--full")
         self.assertEqual(proc.returncode, 0, proc.stdout + proc.stderr)
-        ref = next(line.split(" ", 1)[1] for line in proc.stdout.splitlines() if line.startswith("evidence: "))
-        proc = self.run_repo("close", "init", "--evidence", ref)
-        self.assertEqual(proc.returncode, 0, proc.stderr)
-        result = self.status("--change", "init")
-        self.assertEqual(result["by_id"]["init"]["closure"], "candidate")
+        self.write("../body.md", "Change-ID: init\n")
+        result = self.status("--branch=", "--pr-body", str(self.root.parent / "body.md"), "--base", "main", "--head", "HEAD")
+        self.assertEqual(result["by_id"]["init"]["readiness"], "ready")
         self.assertTrue(result["ok"], result["failures"])
 
 

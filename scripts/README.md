@@ -6,7 +6,7 @@ Repository-controlled, deterministic behavior. Standard-library Python and Git o
   - `status` computes change state and enforces lifecycle, approval, identity, write-scope, and agent-surface gates.
   - `verify` runs the checks registered in `../checks.json`.
   - `new` creates a change packet from `../changes/_template/` with `base`, `baseline` and the required root copies filled in.
-  - `approve` records the owner's digest-bound approval of a chain artifact, in order; `close` writes a candidate `closure.json` with the packet and baseline digests computed. Both refuse rather than write an inconsistent record, and neither changes what `status` accepts.
+  - `approve` records the owner's digest-bound approval of a chain artifact, in order. It refuses rather than write an inconsistent record, and it does not change what `status` accepts.
 - `tests/`: `unittest` fixtures for `repo.py` and `hooks/guard.py`. Every hard guard has a failing negative case and a passing positive control. Run `python3 scripts/tests/run.py` from the repository root: it runs the same tests in parallel, one process per `TestCase` class, at most `--jobs N` (or `SDLC_TEST_JOBS`) at a time, and passes only if every shard passes and every discovered test ran. `python3 -m unittest discover -s scripts/tests -t .` is the sequential equivalent.
 - `hooks/`: `guard.py`, the agent-neutral in-session guard, which agent-specific hook configuration (`.claude/settings.json`) calls. See `hooks/README.md`.
 

@@ -18,6 +18,7 @@
     "scripts/tests/test_approve_close.py",
     "scripts/tests/test_new.py",
     "scripts/tests/test_guard.py",
+    "scripts/tests/test_support.py",
     "changes/**",
     "README.md",
     "AGENTS.md",
@@ -29,11 +30,11 @@
   "approvals": [
     {
       "artifact": "plan.md",
-      "sha256": "sha256:5fcb12e12a642ee4608f22b125823ded79ba16cb5cc71f49210e1e58d1bb3946",
+      "sha256": "sha256:9e2a9ea70cf03d275f56475c2762349ff919f7f6a5ce3398105d7567c8fd7a52",
       "by": "naelonambul",
-      "at": "2026-11-08T16:02:26Z",
-      "write_scope_sha256": "sha256:a799530f2de47360a81c65f29bad8ccefb54e63f5e505cd7fa4504eb0f381a06",
-      "note": "Owner approved these exact bytes in session (answer: 'Approve, record it') after choosing the recommended answers to the open questions."
+      "at": "2026-11-08T16:08:41Z",
+      "write_scope_sha256": "sha256:b860759d57b45cae0f11adfe11171f143451548a980ae90ceebd1a5801a5c569",
+      "note": "Owner approved revision 2 in session (answer: 'Approve revision 2'): adds scripts/tests/test_support.py to write_scope."
     }
   ]
 }

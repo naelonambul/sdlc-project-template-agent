@@ -56,12 +56,6 @@ class PathRuleTests(GuardCase):
         code, out = self.path("changes/x/intent.md", "# local\n")
         self.assertEqual((code, out["decision"]), (0, "allow"))
 
-    def test_closure_json_denied(self):
-        self.packet("x")
-        code, out = self.path("changes/x/closure.json", "{}")
-        self.assertEqual((code, out["decision"]), (2, "deny"))
-        self.assertIn("closure", out["reason"])
-
     def test_approvals_changed_denied(self):
         self.packet("x")
         forged = self.change_json("x", approvals=[{"artifact": "plan.md", "sha256": "sha256:0", "by": "me", "at": "now"}])
@@ -121,27 +115,31 @@ class PathRuleTests(GuardCase):
         proc = self.run_guard("path", "changes/x/change.json", "--proposed", str(target))
         self.assertEqual(proc.returncode, 0, proc.stdout)
 
-    def test_frozen_packet_denied_when_baseline_has_closure(self):
+    def test_merged_packet_denied(self):
         self.packet("x")
-        self.close("x")
-        self.commit("closed x")
+        self.commit("merged x")
         self.git("switch", "-q", "-c", "followup")
         code, out = self.path("changes/x/plan.md", "# edited\n")
         self.assertEqual((code, out["decision"]), (2, "deny"))
-        self.assertIn("frozen-packet", out["reason"])
+        self.assertIn("merged-packet", out["reason"])
 
-    def test_open_packet_allowed_when_baseline_has_no_closure(self):
+    def test_open_packet_allowed_until_it_merges(self):
+        self.git("switch", "-q", "-c", "change/x")
         self.packet("x")
-        self.commit("open x")
-        self.git("switch", "-q", "-c", "followup")
+        self.commit("open x on its branch")
         code, out = self.path("changes/x/plan.md", "# edited\n")
         self.assertEqual((code, out["decision"]), (0, "allow"))
 
-    def test_frozen_uses_checks_json_baseline_branch(self):
+    def test_template_packet_is_never_merged(self):
+        self.write("changes/_template/change.json", "{}\n")
+        self.commit("template")
+        code, out = self.path("changes/_template/plan.md", "# edited\n")
+        self.assertEqual((code, out["decision"]), (0, "allow"))
+
+    def test_merged_uses_checks_json_baseline_branch(self):
         self.write("checks.json", json.dumps({"baseline_branch": "trunk"}))
         self.packet("x")
-        self.close("x")
-        self.commit("closed x on main")
+        self.commit("x on main")
         self.git("switch", "-q", "-c", "followup")
         code, out = self.path("changes/x/plan.md", "# edited\n")
         self.assertEqual((code, out["decision"]), (0, "allow"))
@@ -186,11 +184,11 @@ class CommandRuleTests(GuardCase):
         "cd sub && git reset --hard",
         "python3 scripts/repo.py approve x plan.md --by me",
         "echo '{}' > changes/x/change.json",
-        "sed -i 's/a/b/' changes/x/closure.json",
+        "sed -i 's/a/b/' changes/x/change.json",
         "echo x | tee changes/x/change.json",
         "mv /tmp/c.json changes/x/change.json",
-        "cp /tmp/c.json changes/x/closure.json",
-        "rm changes/x/closure.json",
+        "cp /tmp/c.json changes/x/change.json",
+        "rm changes/x/change.json",
         "python3 -c 'open(\"changes/x/change.json\", \"w\")'",
         "git status\ngit reset --hard",
         "git status\ngit push -f origin x",
@@ -215,7 +213,6 @@ class CommandRuleTests(GuardCase):
         "git diff changes/x/change.json > /tmp/p",
         "cp changes/x/change.json /tmp/backup.json",
         "python3 scripts/repo.py status --change x",
-        "python3 scripts/repo.py close x --evidence y",
         "ls 2>&1",
     ]
 
@@ -308,7 +305,7 @@ class McpToolTests(GuardCase):
         return self.claude({"tool_name": tool, "tool_input": tool_input, "cwd": str(self.root)})
 
     def test_edit_of_protected_paths_denied(self):
-        for key, path in (("relative_path", "intent.md"), ("file_path", "changes/x/closure.json"), ("path", "spec.md")):
+        for key, path in (("relative_path", "intent.md"), ("file_path", "changes/x/change.json"), ("path", "spec.md")):
             with self.subTest(path=path):
                 proc = self.mcp(**{key: path})
                 self.assertEqual(proc.returncode, 2)

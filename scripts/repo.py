@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Repository control plane: `status`, `verify`, `new`, `approve` and `close`.
+"""Repository control plane: `status`, `verify`, `new` and `approve`.
 
 Standard library only. `status` computes change lifecycle state from the
 repository's facts and authored claims; nothing it reports is stored as a
@@ -25,7 +25,6 @@ from pathlib import Path, PurePosixPath
 SCHEMA = 1
 CHANGES = "changes"
 TEMPLATE_PACKET = "_template"
-CLOSURE = "closure.json"
 CHAIN = ("intent.md", "spec.md", "plan.md")
 PLAN = CHAIN[-1]
 BASELINE = ("intent.md", "spec.md")
@@ -45,10 +44,7 @@ KINDS = {
     # baseline and may not modify an established root intent.md or spec.md.
     "repository": ({"plan.md"}, set()),
 }
-# An out-of-date closure fails status, but work on the change may go on: `close` rewrites it.
-CLOSURE_REFRESH = {"closure-invalid", "closure-stale", "closure-unmerged"}
 CHANGE_KEYS = {"schema", "id", "kind", "title", "base", "baseline", "write_scope", "approvals"}
-CLOSURE_KEYS = {"schema", "baseline", "packet_sha256", "tree_sha256", "evidence"}
 APPROVAL_KEYS = {"artifact", "sha256", "write_scope_sha256", "by", "at", "note"}
 
 
@@ -80,93 +76,6 @@ def sha256_bytes(data: bytes) -> str:
 
 def file_digest(path: Path) -> str | None:
     return sha256_bytes(path.read_bytes()) if path.is_file() else None
-
-
-def packet_digest(files: dict[str, bytes]) -> str:
-    """Digest of a packet's files (relative path -> bytes), excluding closure.json."""
-    h = hashlib.sha256()
-    for rel in sorted(files):
-        if rel == CLOSURE:
-            continue
-        h.update(f"{rel}\0{sha256_bytes(files[rel])}\n".encode())
-    return "sha256:" + h.hexdigest()
-
-
-def worktree_packet(root: Path, change_id: str, listing: list[str] | None = None) -> dict[str, bytes]:
-    prefix = f"{CHANGES}/{change_id}/"
-    out = {}
-    if listing is None:
-        listing = git_paths(root, "ls-files", "-co", "--exclude-standard", "-z", "--", prefix)
-    for rel in sorted(set(listing)):
-        path = root / rel
-        if path.is_symlink():
-            out[rel[len(prefix):]] = os.readlink(path).encode()
-        elif path.is_file():
-            out[rel[len(prefix):]] = path.read_bytes()
-    return out
-
-
-class Objects:
-    """One `git cat-file --batch` process for every object a run reads."""
-
-    def __init__(self, root: Path):
-        self.proc = subprocess.Popen(
-            ["git", "cat-file", "--batch"], cwd=root, stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.DEVNULL
-        )
-
-    def read(self, spec: str) -> tuple[str, bytes] | None:
-        self.proc.stdin.write(spec.encode() + b"\n")
-        self.proc.stdin.flush()
-        header = self.proc.stdout.readline()
-        if not header:
-            raise GitError(f"git cat-file --batch stopped at {spec}")
-        if header.endswith((b" missing\n", b" ambiguous\n")):
-            return None
-        _oid, kind, size = header.split()
-        data = self.proc.stdout.read(int(size))
-        self.proc.stdout.read(1)
-        return kind.decode(), data
-
-    def blob(self, spec: str) -> bytes | None:
-        found = self.read(spec)
-        return found[1] if found and found[0] == "blob" else None
-
-    def close(self) -> None:
-        self.proc.stdin.close()
-        self.proc.stdout.close()
-        self.proc.wait()
-
-
-def tree_packet(ctx: Context, commit: str, change_id: str) -> dict[str, bytes]:
-    oid_size = len(commit) // 2
-    out = {}
-    pending = [("", f"{commit}:{CHANGES}/{change_id}")]
-    while pending:
-        prefix, spec = pending.pop()
-        found = ctx.objects.read(spec)
-        if found is None and prefix:
-            raise GitError(f"tree {spec} is missing")
-        if found is None or found[0] != "tree":
-            continue
-        data, at = found[1], 0
-        while at < len(data):
-            space = data.index(b" ", at)
-            nul = data.index(b"\0", space)
-            mode, name = data[at:space], prefix + data[space + 1:nul].decode()
-            oid = data[nul + 1:nul + 1 + oid_size].hex()
-            at = nul + 1 + oid_size
-            if mode == b"40000":
-                pending.append((f"{name}/", oid))
-            elif mode != b"160000":
-                blob = ctx.objects.blob(oid)
-                if blob is None:
-                    raise GitError(f"object {oid} of {name} is missing")
-                out[name] = blob
-    return out
-
-
-def tree_file(ctx: Context, commit: str, path: str) -> bytes | None:
-    return ctx.objects.blob(f"{commit}:{path}")
 
 
 # --------------------------------------------------------------------------
@@ -221,45 +130,20 @@ class Context:
     head: str | None = None
     _shallow: bool | None = None
     _baseline_ref: str | None | bool = False
-    _objects: Objects | None = None
-    _packet_paths: dict[str, list[str]] | None = None
-    _closure_commits: dict[str, list[str]] | None = None
+    _merged_ids: set[str] | None = None
 
     @property
-    def closure_commits(self) -> dict[str, list[str]]:
-        """closure.json path -> first-parent commits that touch it, newest first."""
-        if self._closure_commits is None:
-            log = git(
-                self.root, "log", "--first-parent", "-m", "--root", "--no-renames", "--name-only", "--format=%x00%H",
-                self.baseline_ref, "--", f":(glob){CHANGES}/*/{CLOSURE}",
-            )
-            self._closure_commits = {}
-            for record in filter(None, log.split("\0")):
-                commit, *paths = record.split("\n")
-                for path in set(filter(None, paths)):
-                    self._closure_commits.setdefault(path, []).append(commit)
-        return self._closure_commits
-
-    def packet_paths(self, change_id: str) -> list[str]:
-        """A packet's paths, listed once per run because `status` never writes to the worktree."""
-        if self._packet_paths is None:
-            self._packet_paths = {}
-            for rel in git_paths(self.root, "ls-files", "-co", "--exclude-standard", "-z", "--", f"{CHANGES}/"):
-                parts = rel.split("/")
-                if len(parts) > 2:
-                    self._packet_paths.setdefault(parts[1], []).append(rel)
-        return self._packet_paths.get(change_id, [])
-
-    @property
-    def objects(self) -> Objects:
-        if self._objects is None:
-            self._objects = Objects(self.root)
-        return self._objects
-
-    def close(self) -> None:
-        if self._objects is not None:
-            self._objects.close()
-            self._objects = None
+    def merged_ids(self) -> set[str]:
+        """Packets whose change.json is on the baseline branch's tip: their pull request merged."""
+        if self._merged_ids is None:
+            self._merged_ids = set()
+            if self.baseline_ref is not None:
+                listing = git(self.root, "ls-tree", "-r", "--name-only", self.baseline_ref, "--", f"{CHANGES}/")
+                for rel in listing.splitlines():
+                    parts = rel.split("/")
+                    if len(parts) == 3 and parts[2] == "change.json" and parts[1] != TEMPLATE_PACKET:
+                        self._merged_ids.add(parts[1])
+        return self._merged_ids
 
     @property
     def shallow(self) -> bool:
@@ -316,8 +200,6 @@ class ChangeStatus:
     freshness: str = "current"
     approval: str = "none"
     readiness: str = "blocked"
-    closure: str = "none"
-    anchor: str | None = None
     artifacts: dict = field(default_factory=dict)
     reasons: list = field(default_factory=list)
     change: dict | None = None
@@ -337,8 +219,6 @@ class ChangeStatus:
             "freshness": self.freshness,
             "approval": self.approval,
             "readiness": self.readiness,
-            "closure": self.closure,
-            "closure_anchor": self.anchor,
             "artifacts": self.artifacts,
             "reasons": [r.as_dict() for r in self.reasons],
         }
@@ -479,6 +359,12 @@ def evaluate_change(ctx: Context, change_id: str) -> ChangeStatus:
         return st
     st.change = data
     st.kind = data["kind"]
+    if change_id in ctx.merged_ids:
+        # Its pull request merged: Git and the pull request are the record. A later change
+        # that edits it needs the path in its own approved write_scope (check_scope).
+        st.stage = "merged"
+        st.add("pending", "merged", f"merged on {ctx.baseline_branch!r}; record follow-up work as a new change")
+        return st
     required, optional = KINDS[st.kind]
     present = {name for name in CHAIN if (packet_dir / name).is_file()}
     for name in sorted(required - present):
@@ -501,27 +387,17 @@ def evaluate_change(ctx: Context, change_id: str) -> ChangeStatus:
 
     check_order(st, chain, approved_at)
 
-    # closure ------------------------------------------------------------------
-    if (packet_dir / CLOSURE).exists():
-        st.stage = "closed"
-        check_closure(ctx, st, data, present, chain, approved_at)
     placeholders = [n for n in approved_at if is_placeholder(st.kind, packet_dir, n)]
-    if placeholders and st.closure != "frozen":
+    if placeholders:
         st.add("error", "placeholder-artifact", f"approved {placeholders} still carry the unestablished marker")
-    # A frozen change was approved before scope binding existed, or verified with it at its anchor.
-    if unbound_scope and st.closure != "frozen":
+    if unbound_scope:
         st.add("error", "unbound-scope", f"the {PLAN} approval does not bind write_scope; the owner re-runs repo.py approve {change_id} {PLAN}")
 
-    # inherited baseline: a frozen change was verified at its own anchor, so later
-    # legitimate root evolution does not make it stale.
-    stale_baseline = False if st.closure == "frozen" else check_baseline(ctx, st, data, present)
-
-    if st.closure == "frozen":
-        st.freshness = "frozen"
-    elif stale_baseline or stale_approval:
+    stale_baseline = check_baseline(ctx, st, data, present)
+    if stale_baseline or stale_approval:
         st.freshness = "stale"
-    blocking = [r for r in st.reasons if r.level in ("error", "pending") and r.code not in CLOSURE_REFRESH]
-    st.readiness = "ready" if not blocking and st.stage in ("implementation", "closed") else "blocked"
+    blocking = [r for r in st.reasons if r.level in ("error", "pending")]
+    st.readiness = "ready" if not blocking and st.stage == "implementation" else "blocked"
     return st
 
 
@@ -576,127 +452,6 @@ def check_baseline(ctx: Context, st: ChangeStatus, data: dict, present: set) -> 
 def established_at(ctx: Context, commit: str, name: str) -> bool:
     data = git(ctx.root, "show", f"{commit}:{name}", binary=True, check=False)
     return data is not None and UNESTABLISHED.encode() not in data
-
-
-def validate_closure(st: ChangeStatus, closure, carried: set) -> bool:
-    if not isinstance(closure, dict):
-        st.add("error", "closure-invalid", "closure.json must be a JSON object")
-        return False
-    extra = set(closure) - CLOSURE_KEYS
-    if extra:
-        st.add("error", "closure-invalid", f"unknown closure keys {sorted(extra)}; closure never names its own commit, which is derived from history")
-        return False
-    ok = closure.get("schema") == SCHEMA
-    if not ok:
-        st.add("error", "closure-invalid", f"closure schema must be {SCHEMA}")
-    baseline = closure.get("baseline")
-    if not isinstance(baseline, dict) or set(baseline) != carried or not all(DIGEST_RE.match(str(v)) for v in baseline.values()):
-        st.add("error", "closure-invalid", f"closure baseline must record resulting root digests for exactly {sorted(carried) or 'no artifacts'}")
-        ok = False
-    if not DIGEST_RE.match(str(closure.get("packet_sha256"))):
-        st.add("error", "closure-invalid", "closure packet_sha256 must be a sha256 digest")
-        ok = False
-    if "tree_sha256" in closure and not DIGEST_RE.match(str(closure["tree_sha256"])):
-        st.add("error", "closure-invalid", "closure tree_sha256 must be a sha256 digest")
-        ok = False
-    evidence = closure.get("evidence")
-    if not isinstance(evidence, list) or not evidence or not all(isinstance(e, str) and e.strip() for e in evidence):
-        st.add("error", "closure-invalid", "closure evidence must list at least one verification reference")
-        ok = False
-    return ok
-
-
-def find_closure_anchor(ctx: Context, change_id: str) -> str | None:
-    """Newest first-parent commit that introduces the closure.json on the baseline branch's tip."""
-    path = f"{CHANGES}/{change_id}/{CLOSURE}"
-    if tree_file(ctx, ctx.baseline_ref, path) is None:
-        return None
-    for commit in ctx.closure_commits.get(path, []):
-        if tree_file(ctx, commit, path) is not None and tree_file(ctx, f"{commit}^1", path) is None:
-            return commit
-    return None
-
-
-def removed_frozen(ctx: Context) -> list[str]:
-    """Packets closed on the baseline branch's tip whose closure.json the candidate no longer has."""
-    if ctx.baseline_ref is None or ctx.shallow:
-        return []
-    listing = git(ctx.root, "ls-tree", "-r", "--name-only", ctx.baseline_ref, "--", f"{CHANGES}/")
-    ids = [p.split("/")[1] for p in listing.splitlines() if p.endswith(f"/{CLOSURE}") and p.count("/") == 2]
-    return [cid for cid in ids if not (ctx.root / CHANGES / cid / CLOSURE).exists()]
-
-
-def check_closure(ctx, st: ChangeStatus, data, present, chain, approved_at):
-    carried = present & set(BASELINE)
-    if any(n not in approved_at for n in chain):
-        st.add("error", "closure-before-approval", "closure.json exists before every chain artifact is approved")
-    if ctx.shallow:
-        st.closure = "invalid"
-        st.add("error", "closure-history", "shallow history cannot establish the closure anchor; fetch full history")
-        return
-    if ctx.baseline_ref is None:
-        st.closure = "invalid"
-        st.add("error", "closure-history", f"baseline branch {ctx.baseline_branch!r} is not resolvable")
-        return
-    anchor = find_closure_anchor(ctx, st.id)
-    if anchor:
-        st.anchor = anchor
-        check_anchored_closure(ctx, st, anchor, carried)
-    else:
-        check_candidate_closure(ctx, st, carried)
-
-
-def check_anchored_closure(ctx: Context, st: ChangeStatus, anchor: str, carried: set) -> None:
-    anchored = tree_packet(ctx, anchor, st.id)
-    try:
-        closure = json.loads(anchored[CLOSURE])
-    except (KeyError, json.JSONDecodeError):
-        st.closure = "invalid"
-        st.add("error", "closure-invalid", f"closure.json at anchor {anchor[:12]} is unreadable")
-        return
-    ok = validate_closure(st, closure, carried)
-    if ok and closure["packet_sha256"] != packet_digest(anchored):
-        ok = False
-        st.add("error", "closure-invalid", f"packet digest does not match the packet at anchor {anchor[:12]}")
-    for name in sorted(carried):
-        root_bytes = tree_file(ctx, anchor, name)
-        if ok and (root_bytes is None or sha256_bytes(root_bytes) != closure["baseline"][name]):
-            ok = False
-            st.add("error", "closure-invalid", f"root {name} at anchor {anchor[:12]} does not match the closure baseline digest")
-    current = worktree_packet(ctx.root, st.id, ctx.packet_paths(st.id))
-    if current != anchored:
-        changed = sorted(set(current) ^ set(anchored) | {k for k in current if k in anchored and current[k] != anchored[k]})
-        st.add("error", "frozen-integrity", f"closed packet changed after closure anchor {anchor[:12]}: {changed}")
-        ok = False
-    st.closure = "frozen" if ok else "invalid"
-
-
-def check_candidate_closure(ctx: Context, st: ChangeStatus, carried: set) -> None:
-    """The closure is not on the baseline branch yet: validate it against the candidate tree."""
-    packet_dir = ctx.root / CHANGES / st.id
-    try:
-        closure = json.loads((packet_dir / CLOSURE).read_text())
-    except json.JSONDecodeError as exc:
-        st.closure = "invalid"
-        st.add("error", "closure-invalid", f"closure.json is not valid JSON: {exc}")
-        return
-    ok = validate_closure(st, closure, carried)
-    if ok and closure["packet_sha256"] != packet_digest(worktree_packet(ctx.root, st.id)):
-        ok = False
-        st.add("error", "closure-invalid", "closure packet_sha256 does not match the current packet")
-    if ok and closure.get("tree_sha256") != candidate_digest(ctx.root, st.id):
-        ok = False
-        st.add("error", "closure-stale", "files changed since the closure was written; update the branch if it is behind the baseline, then run repo.py verify and repo.py close again")
-    for name in sorted(carried):
-        root_digest, _ = root_state(ctx, name)
-        local = file_digest(packet_dir / name)
-        if root_digest != local:
-            ok = False
-            st.add("error", "closure-unmerged", f"accepted {name} has not been merged into root {name}")
-        elif ok and closure["baseline"][name] != root_digest:
-            ok = False
-            st.add("error", "closure-invalid", f"closure baseline digest for {name} does not match root {name}")
-    st.closure = "candidate" if ok else "invalid"
 
 
 def change_ids(root: Path) -> list[str]:
@@ -816,7 +571,7 @@ def check_scope(ctx: Context, st: ChangeStatus) -> list[str]:
     implementation = [p for p in paths if not p.startswith(own)]
     if implementation and any(r.level == "pending" for r in st.reasons):
         st.add("error", "not-ready", f"{len(implementation)} path(s) outside the packet changed before the change is ready")
-    if any(r.code not in CLOSURE_REFRESH for r in st.errors):
+    if st.errors:
         st.readiness = "blocked"
     return paths
 
@@ -1068,9 +823,8 @@ def run_check(ctx: Context, check: dict, log_path: Path) -> dict:
     return {**record, "status": "passed", "reason": "exit code 0"}
 
 
-def candidate_digest(root: Path, cid: str | None) -> str:
-    """Digest of the candidate's paths, modes and content, leaving out evidence and the change's own closure."""
-    closure = f"{CHANGES}/{cid}/{CLOSURE}"
+def candidate_digest(root: Path, _cid: str | None = None) -> str:
+    """Digest of the candidate's paths, modes and content, leaving out evidence."""
     gitlinks = {}
     for entry in git_paths(root, "ls-files", "-s", "-z"):
         meta, rel = entry.split("\t", 1)
@@ -1080,7 +834,7 @@ def candidate_digest(root: Path, cid: str | None) -> str:
     digest = hashlib.sha256()
     for rel in sorted(set(git_paths(root, "ls-files", "-co", "--exclude-standard", "-z"))):
         path = root / rel
-        if rel == closure or rel.startswith(".evidence/"):
+        if rel.startswith(".evidence/"):
             continue
         if rel in gitlinks:
             mode, data = "160000", gitlinks[rel].encode()
@@ -1157,7 +911,7 @@ def cmd_verify(args) -> int:
     decisions, routing = route(ctx, checks, args.full)
     run_id = _dt.datetime.now(_dt.timezone.utc).strftime("%Y%m%dT%H%M%S%fZ")
     out_dir = Path(args.evidence_dir or ctx.root / ".evidence") / run_id
-    tree = candidate_digest(ctx.root, active.id)
+    tree = candidate_digest(ctx.root)
     results = []
     for check in checks:
         group = check.get("group", "core")
@@ -1173,7 +927,7 @@ def cmd_verify(args) -> int:
             record = run_check(ctx, check, out_dir / f"{check['id']}.log")
             record["route"] = reason
             results.append(record)
-    stable = candidate_digest(ctx.root, active.id) == tree
+    stable = candidate_digest(ctx.root) == tree
     evidence = {
         "schema": SCHEMA,
         "run_id": run_id,
@@ -1231,25 +985,25 @@ def read_pr_body(args) -> str | None:
     return Path(args.pr_body).read_text() if args.pr_body != "-" else sys.stdin.read()
 
 
-def pull_request_failures(st: ChangeStatus, paths: list[str]) -> list[str]:
-    """The final gate: a pull request carries one finished change."""
+def pull_request_failures(ctx: Context, st: ChangeStatus) -> list[str]:
+    """The final gate: a pull request merges its accepted intent/spec copies into the root.
+
+    Readiness and scope are already failures of the active change; merging the pull
+    request is what closes it.
+    """
     failures = []
-    if st.closure != "candidate":
-        failures.append(f"{st.id}: pull request needs a candidate closure (closure={st.closure})")
-    others = {p.split("/")[1] for p in paths if p.startswith(f"{CHANGES}/") and p.count("/") >= 2}
-    others -= {st.id, TEMPLATE_PACKET}
-    if others:
-        failures.append(f"{st.id}: pull request touches other packets: {sorted(others)}")
+    packet_dir = ctx.root / CHANGES / st.id
+    for name in BASELINE:
+        local = file_digest(packet_dir / name)
+        if local is not None and root_state(ctx, name)[0] != local:
+            failures.append(f"{st.id}: accepted {name} is not merged into the root: cp {CHANGES}/{st.id}/{name} {name} (carried-unmerged)")
     return failures
 
 
 def compute_status(ctx: Context, args) -> dict:
     ids = change_ids(ctx.root)
     active = resolve_active(ctx, args.change, read_pr_body(args), args.branch, ids)
-    try:
-        statuses = {cid: evaluate_change(ctx, cid) for cid in ids}
-    finally:
-        ctx.close()
+    statuses = {cid: evaluate_change(ctx, cid) for cid in ids}
     result = {"active": None, "active_source": active.source, "identity_errors": active.errors, "changed_paths": []}
     if active.id in statuses:
         result["active"] = active.id
@@ -1265,18 +1019,11 @@ def compute_status(ctx: Context, args) -> dict:
         if cid == active.id:
             failures += [f"{cid}: {r.message}" for r in errors]
         else:
-            # Other packets fail the gate only on integrity problems, not on in-flight
-            # lifecycle state: invalid records, unverifiable history, or a broken
-            # anchored (merged) closure.
-            integrity = ("invalid-change", "scope-path-escape", "frozen-integrity", "closure-history")
-            failures += [
-                f"{cid}: {r.message}"
-                for r in errors
-                if r.code in integrity or (r.code.startswith("closure") and st.anchor)
-            ]
-    failures += [f"{cid}: frozen packet removed from the candidate; if this branch is behind the baseline, update it" for cid in removed_frozen(ctx)]
+            # Other packets fail the gate only on invalid records, not on in-flight lifecycle state.
+            integrity = ("invalid-change", "scope-path-escape")
+            failures += [f"{cid}: {r.message}" for r in errors if r.code in integrity]
     if args.pr_body is not None and active.id in statuses:
-        failures += pull_request_failures(statuses[active.id], result["changed_paths"])
+        failures += pull_request_failures(ctx, statuses[active.id])
     failures += [r.message for r in surface if r.level == "error"]
     result["changes"] = [statuses[c].as_dict() for c in ids]
     result["surface"] = [r.as_dict() for r in surface]
@@ -1286,8 +1033,8 @@ def compute_status(ctx: Context, args) -> dict:
 
 
 def folded(change: dict, active: str | None) -> bool:
-    """A healthy frozen packet that is not being worked on; its detail stays in --json."""
-    return change["id"] != active and change["closure"] == "frozen" and not change["reasons"]
+    """A healthy merged packet that is not being worked on; its detail stays in --json."""
+    return change["id"] != active and change["stage"] == "merged" and all(r["code"] == "merged" for r in change["reasons"])
 
 
 def print_status(result: dict):
@@ -1302,16 +1049,14 @@ def print_status(result: dict):
             continue
         mark = "*" if ch["id"] == result["active"] else " "
         print(f"{mark} {ch['id']} [{ch['kind']}]")
-        print(f"    stage={ch['stage']} freshness={ch['freshness']} approval={ch['approval']} readiness={ch['readiness']} closure={ch['closure']}")
-        if ch["closure_anchor"]:
-            print(f"    closure anchor: {ch['closure_anchor']}")
+        print(f"    stage={ch['stage']} freshness={ch['freshness']} approval={ch['approval']} readiness={ch['readiness']}")
         for name, art in ch["artifacts"].items():
             print(f"    {name}: {art['sha256']} approval={art['approval']}")
         for r in ch["reasons"]:
             print(f"    - {r['level']}: {r['message']}")
-    frozen = sum(folded(ch, result["active"]) for ch in result["changes"])
-    if frozen:
-        print(f"frozen: {frozen}")
+    merged = sum(folded(ch, result["active"]) for ch in result["changes"])
+    if merged:
+        print(f"merged: {merged}")
     for r in result["surface"]:
         if r["level"] != "info":
             print(f"surface {r['level']}: {r['message']}")
@@ -1465,35 +1210,32 @@ def approval_claim(root: Path, args) -> tuple[Path, dict, dict]:
     path = packet_dir / "change.json"
     data = packet_json(path, f"{CHANGES}/{cid}/change.json")
     ctx = Context(root=root, baseline_branch=baseline_branch(root))
-    try:
-        st = evaluate_change(ctx, cid)
-        if any(r.code == "invalid-change" for r in st.errors):
-            raise Refusal("; ".join(r.message for r in st.errors if r.code == "invalid-change"))
-        if artifact not in st.artifacts:
-            raise Refusal(f"{artifact} is not in the chain of a {st.kind!r} change ({', '.join(st.artifacts)})")
-        if not (packet_dir / artifact).is_file():
-            raise Refusal(f"{CHANGES}/{cid}/{artifact} does not exist yet; draft it first")
-        if is_placeholder(st.kind, packet_dir, artifact):
-            raise Refusal(f"{CHANGES}/{cid}/{artifact} still carries the unestablished marker; draft it and remove the marker first")
-        if st.anchor:
-            raise Refusal(f"the change is already closed on {ctx.baseline_branch!r} (anchor {st.anchor[:12]}); record follow-up work as a new change")
-        chain = list(st.artifacts)
-        for upstream in chain[: chain.index(artifact)]:
-            if st.artifacts[upstream]["approval"] == "none":
-                raise Refusal(f"approve {upstream} before {artifact}: artifacts are approved in order {' -> '.join(chain)}")
-        claim = {
-            "artifact": artifact,
-            "sha256": file_digest(packet_dir / artifact),
-            "by": args.by.strip(),
-            "at": _dt.datetime.now(_dt.timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ"),
-        }
-        if artifact == PLAN:
-            claim["write_scope_sha256"] = scope_digest(data.get("write_scope", []))
-        if args.note:
-            claim["note"] = args.note
-        return path, data, claim
-    finally:
-        ctx.close()
+    st = evaluate_change(ctx, cid)
+    if any(r.code == "invalid-change" for r in st.errors):
+        raise Refusal("; ".join(r.message for r in st.errors if r.code == "invalid-change"))
+    if st.stage == "merged":
+        raise Refusal(f"the change is already merged on {ctx.baseline_branch!r}; record follow-up work as a new change")
+    if artifact not in st.artifacts:
+        raise Refusal(f"{artifact} is not in the chain of a {st.kind!r} change ({', '.join(st.artifacts)})")
+    if not (packet_dir / artifact).is_file():
+        raise Refusal(f"{CHANGES}/{cid}/{artifact} does not exist yet; draft it first")
+    if is_placeholder(st.kind, packet_dir, artifact):
+        raise Refusal(f"{CHANGES}/{cid}/{artifact} still carries the unestablished marker; draft it and remove the marker first")
+    chain = list(st.artifacts)
+    for upstream in chain[: chain.index(artifact)]:
+        if st.artifacts[upstream]["approval"] == "none":
+            raise Refusal(f"approve {upstream} before {artifact}: artifacts are approved in order {' -> '.join(chain)}")
+    claim = {
+        "artifact": artifact,
+        "sha256": file_digest(packet_dir / artifact),
+        "by": args.by.strip(),
+        "at": _dt.datetime.now(_dt.timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ"),
+    }
+    if artifact == PLAN:
+        claim["write_scope_sha256"] = scope_digest(data.get("write_scope", []))
+    if args.note:
+        claim["note"] = args.note
+    return path, data, claim
 
 
 def cmd_approve(args) -> int:
@@ -1510,116 +1252,6 @@ def cmd_approve(args) -> int:
         print(f"approve again, in order: {', '.join(downstream)}")
     print("this is a local, unverified claim: it binds bytes, it does not prove identity")
     print(f"next: python3 scripts/repo.py status --change {args.id}")
-    return 0
-
-
-def evidence_problem(data, cid: str, head: str, registered: list[str], tree: str) -> str | None:
-    """Why a parsed evidence file is not a passing verify run of this change at HEAD."""
-    if not isinstance(data, dict):
-        return "not JSON evidence"
-    if data.get("change") != cid:
-        return f"it was not produced by repo.py verify --change {cid}"
-    if data.get("complete") is not True:
-        return "the verify run is incomplete"
-    checks = data.get("checks")
-    if not checks or not isinstance(checks, list) or not all(isinstance(c, dict) for c in checks):
-        return "it has no check results"
-    statuses = {c.get("id"): c.get("status") for c in checks}
-    bad = {i: s for i, s in statuses.items() if s != "passed"}
-    bad.update({i: "missing" for i in registered if i not in statuses})
-    if bad:
-        return f"not every check passed in a full run: {bad}"
-    source = data.get("source")
-    if not isinstance(source, dict) or source.get("commit") != head:
-        return "its source commit is not HEAD; verify again"
-    if source.get("tree_sha256") != tree:
-        return "files changed since that run; verify again"
-    return None
-
-
-def evidence_ref(root: Path, ref: str) -> str:
-    """A file reference relative to the root; anything that is not a file stays free text."""
-    candidate = root / ref  # an absolute ref replaces root
-    if not candidate.is_file():
-        return ref
-    try:
-        return candidate.resolve().relative_to(root.resolve()).as_posix()
-    except ValueError:
-        raise Refusal(f"--evidence {ref} is outside the repository") from None
-
-
-def check_verify_evidence(root: Path, cid: str, refs: list[str]) -> None:
-    """At least one reference must be a passing verify run of this change at HEAD."""
-    head = git(root, "rev-parse", "HEAD").strip()
-    registered = [c.get("id") for c in load_config(root).get("checks", [])]
-    tree = candidate_digest(root, cid)
-    problems = []
-    for ref in refs:
-        path = root / ref
-        if not path.is_file():
-            problems.append(f"{ref}: not an existing file")
-            continue
-        try:
-            problem = evidence_problem(json.loads(path.read_text()), cid, head, registered, tree)
-        except (OSError, ValueError):
-            problem = "not JSON evidence"
-        if problem is None:
-            return
-        problems.append(f"{ref}: {problem}")
-    raise Refusal(f"--evidence must cite a passing repo.py verify run of this change: {problems[0]}")
-
-
-def closure_record(root: Path, args) -> tuple[Path, dict]:
-    """Validate a `close` request; return (closure.json path, its content)."""
-    cid = args.id
-    check_change_id(cid)
-    packet_dir = root / CHANGES / cid
-    packet_json(packet_dir / "change.json", f"{CHANGES}/{cid}/change.json")
-    evidence = [evidence_ref(root, e.strip()) for e in args.evidence or [] if e and e.strip()]
-    if not evidence:
-        raise Refusal("--evidence is required: cite the local verify evidence (for example the .evidence/<run>/evidence.json path)")
-    ctx = Context(root=root, baseline_branch=baseline_branch(root))
-    try:
-        st = evaluate_change(ctx, cid)
-        if st.anchor:
-            raise Refusal(f"the change is already closed on {ctx.baseline_branch!r} (anchor {st.anchor[:12]}); record follow-up work as a new change")
-        blocking = [r for r in st.reasons if r.level in ("error", "pending") and not r.code.startswith("closure")]
-        if blocking:
-            raise Refusal("the change is not ready to close: " + "; ".join(r.message for r in blocking))
-        present = {name for name in CHAIN if (packet_dir / name).is_file()}
-        carried = sorted(present & set(BASELINE))
-        baseline = {}
-        for name in carried:
-            root_digest, _ = root_state(ctx, name)
-            local = file_digest(packet_dir / name)
-            if root_digest != local:
-                raise Refusal(f"accepted {name} has not been merged into the root: cp {CHANGES}/{cid}/{name} {name}")
-            baseline[name] = root_digest
-        check_verify_evidence(root, cid, evidence)
-        refs = []
-        for ref in evidence:
-            candidate = root / ref
-            refs.append(f"{ref} {file_digest(candidate)}" if candidate.is_file() else ref)
-        closure = {
-            "schema": SCHEMA,
-            "baseline": baseline,
-            "packet_sha256": packet_digest(worktree_packet(root, cid)),
-            "tree_sha256": candidate_digest(root, cid),
-            "evidence": refs,
-        }
-        return packet_dir / CLOSURE, closure
-    finally:
-        ctx.close()
-
-
-def cmd_close(args) -> int:
-    path, closure = closure_record(repo_root(), args)
-    existed = path.exists()
-    write_json(path, closure)
-    print(f"{'rewrote' if existed else 'wrote'} {CHANGES}/{args.id}/{CLOSURE} (packet {closure['packet_sha256']})")
-    for name, digest in closure["baseline"].items():
-        print(f"  baseline {name}: {digest}")
-    print(f"next: python3 scripts/repo.py status --change {args.id}  (expect stage=closed closure=candidate)")
     return 0
 
 
@@ -1660,10 +1292,6 @@ def build_parser() -> argparse.ArgumentParser:
     approve.add_argument("artifact", help=f"one of {', '.join(CHAIN)}")
     approve.add_argument("--by", required=True, help="the human owner who reviewed exactly these bytes")
     approve.add_argument("--note", help="free-text note stored with the claim")
-    close = sub.add_parser("close", help="write a candidate closure.json from the current packet and root")
-    close.set_defaults(func=cmd_close)
-    close.add_argument("id", help="change id")
-    close.add_argument("--evidence", action="append", metavar="REF", help="local verification evidence reference (repeatable); an existing file is recorded with its sha256")
     return parser
 
 

@@ -1,9 +1,0 @@
-{
-  "schema": 1,
-  "baseline": {},
-  "packet_sha256": "sha256:688ccedbdcdd484b471726214bc5f2be5a05b377480b542619532f4d6e4f74cf",
-  "evidence": [
-    "local: python3 scripts/repo.py verify --change lifecycle-docs -> control-plane passed (.evidence/20260923T143046092265Z/evidence.json)",
-    "local: python3 scripts/repo.py verify --full -> control-plane passed (.evidence/20260923T143102893905Z/evidence.json)"
-  ]
-}

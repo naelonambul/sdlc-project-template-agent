@@ -62,11 +62,12 @@ def baseline_ref(root: Path) -> str | None:
     return None
 
 
-def is_frozen(root: Path, change_id: str) -> bool:
+def is_merged(root: Path, change_id: str) -> bool:
+    """The packet's pull request merged: its change.json is on the baseline branch's tip."""
     ref = baseline_ref(root)
-    if ref is None:
+    if ref is None or change_id == "_template":
         return False
-    return git(root, "cat-file", "-e", f"{ref}:changes/{change_id}/closure.json").returncode == 0
+    return git(root, "cat-file", "-e", f"{ref}:changes/{change_id}/change.json").returncode == 0
 
 
 def relative_path(root: Path, path: str) -> str | None:
@@ -109,11 +110,9 @@ def decide_path(root: Path, path: str, proposed: str | None) -> tuple[str, str]:
     parts = rel.split("/")
 
     if rel in ("intent.md", "spec.md"):
-        return decision(DENY, "root-baseline: edit the change-local copy; the root is replaced whole at closure")
-    if parts[0] == "changes" and len(parts) >= 3 and is_frozen(root, parts[1]):
-        return decision(DENY, "frozen-packet: the packet is closed on the baseline branch; record follow-up work as a new change")
-    if len(parts) == 3 and parts[0] == "changes" and parts[2] == "closure.json":
-        return decision(DENY, "closure: closures are written by repo.py close")
+        return decision(DENY, "root-baseline: edit the change-local copy; once approved it replaces the root whole, in the change's pull request")
+    if parts[0] == "changes" and len(parts) >= 3 and is_merged(root, parts[1]):
+        return decision(DENY, "merged-packet: the packet is merged on the baseline branch; record follow-up work as a new change")
     if len(parts) == 3 and parts[0] == "changes" and parts[2] == "change.json":
         approvals_reason = "change-approvals: approvals are recorded by repo.py approve, by the owner"
         if proposed is None:
@@ -137,7 +136,7 @@ def decide_path(root: Path, path: str, proposed: str | None) -> tuple[str, str]:
 # command rules
 # --------------------------------------------------------------------------
 
-PACKET_FILE = re.compile(r"(?:^|/)(?:change|closure)\.json$")
+PACKET_FILE = re.compile(r"(?:^|/)change\.json$")
 APPROVE = re.compile(r"repo\.py\s+approve\b")
 SHELLS = {"sh", "bash", "zsh", "dash", "ksh"}
 INERT_COMMANDS = {"echo", "printf"}
@@ -215,7 +214,7 @@ def names_packet_file(token: str) -> bool:
 
 
 def packet_write(tokens: list[str]) -> bool:
-    """A redirect, tee, in-place edit, move, copy, delete or inline script that targets change.json or closure.json."""
+    """A redirect, tee, in-place edit, move, copy, delete or inline script that targets change.json."""
     for i, token in enumerate(tokens):
         if is_operator(token) and ">" in token and i + 1 < len(tokens) and names_packet_file(tokens[i + 1]):
             return True
@@ -230,7 +229,7 @@ def packet_write(tokens: list[str]) -> bool:
             return True
         if cmd in ("mv", "cp") and args and names_packet_file(args[-1]):
             return True
-        if cmd in ("python", "python3") and "-c" in args and any(names_packet_file(a) or "change.json" in a or "closure.json" in a for a in args):
+        if cmd in ("python", "python3") and "-c" in args and any(names_packet_file(a) or "change.json" in a for a in args):
             return True
     return False
 
@@ -316,7 +315,7 @@ def decide_command(command: str, depth: int = 0) -> tuple[str, str]:
         if APPROVE.search(" ".join(segment)) and any(a.endswith("repo.py") for a in segment):
             return decision(ASK, "approve: approvals are recorded by the owner; the human confirms")
     if packet_write(tokens):
-        return decision(ASK, "packet-write: shell write to change.json or closure.json; the human confirms")
+        return decision(ASK, "packet-write: shell write to change.json; the human confirms")
     if depth < 3:
         for segment in segments:
             if posixpath.basename(segment[0]) in SHELLS:

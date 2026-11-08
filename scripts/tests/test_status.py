@@ -1,16 +1,12 @@
-"""Fixtures for `repo.py status`: identity, lifecycle, approval, scope, closure."""
+"""Fixtures for `repo.py status`: identity, lifecycle, approval, scope, merged packets."""
 
 import contextlib
 import io
 import json
 import os
-import shutil
 import subprocess
 import sys
-import tempfile
 import unittest
-from pathlib import Path
-from unittest import mock
 
 from scripts.tests import support
 from scripts.tests.support import REPO_PY, UNESTABLISHED, RepoCase, digest
@@ -90,6 +86,7 @@ class Lifecycle(RepoCase):
 
     def test_stale_upstream_digest_is_stale_and_blocked(self):
         self.establish_baseline()
+        self.git("switch", "-q", "-c", "change/impl")
         self.packet("impl", scope=["src/**"])
         self.approve("impl", "plan.md")
         self.commit("impl packet")
@@ -271,29 +268,6 @@ class CarriedBaseline(RepoCase):
         self.assertNotIn("baseline-established", self.codes(self.status("--change", "init"), "init"))
 
 
-class ClosureAndReadiness(RepoCase):
-    def closed(self):
-        self.establish_baseline()
-        self.git("switch", "-q", "-c", "change/imp")
-        self.packet("imp", kind="repository", scope=["src/**"])
-        self.approve("imp", "plan.md")
-        self.write("src/a.txt", "x\n")
-        self.close("imp")
-        self.commit("close imp")
-
-    def test_an_out_of_date_closure_fails_status_but_not_readiness(self):
-        self.closed()
-        self.write("src/a.txt", "y\n")
-        result = self.status("--change", "imp")
-        self.assertEqual(result["by_id"]["imp"]["readiness"], "ready")
-        self.assertEqual(result["exit"], 1)
-
-    def test_a_stale_approval_with_a_closure_stays_blocked(self):
-        self.closed()
-        self.write("changes/imp/plan.md", "# Plan v2\n")
-        self.assertEqual(self.status("--change", "imp")["by_id"]["imp"]["readiness"], "blocked")
-
-
 class ScopeBinding(RepoCase):
     def approved(self):
         self.packet("imp", kind="repository", scope=["src/**", "docs/**"])
@@ -319,69 +293,59 @@ class ScopeBinding(RepoCase):
         self.assertIn("unbound-scope", self.codes(result, "imp"))
         self.assertEqual(result["by_id"]["imp"]["readiness"], "blocked")
 
-    def test_frozen_packet_without_scope_binding_stays_frozen(self):
+    def test_merged_packet_without_scope_binding_stays_merged(self):
         self.packet("imp", kind="repository")
         self.approve("imp", "plan.md", bind_scope=False)
-        self.close("imp")
-        self.commit("close imp")
-        change = self.status()["by_id"]["imp"]
-        self.assertEqual((change["closure"], change["freshness"]), ("frozen", "frozen"))
-        self.assertNotIn("unbound-scope", self.codes(self.status(), "imp"))
+        self.commit("merge imp")
+        result = self.status()
+        self.assertEqual(result["by_id"]["imp"]["stage"], "merged")
+        self.assertNotIn("unbound-scope", self.codes(result, "imp"))
+        self.assertEqual(result["exit"], 0)
 
 
 class TextOutput(RepoCase):
-    def frozen(self, *ids):
+    def merged(self, *ids):
         for cid in ids:
             self.packet(cid, kind="repository")
             self.approve(cid, "plan.md")
-            self.close(cid)
-        self.commit("close")
+        self.commit("merge")
 
     def text(self, *args):
         return self.run_repo("status", *args)
 
-    def test_frozen_packets_fold_into_one_line(self):
-        self.frozen("alpha", "beta")
+    def test_merged_packets_fold_into_one_line(self):
+        self.merged("alpha", "beta")
         out = self.text().stdout
-        self.assertIn("frozen: 2\n", out)
+        self.assertIn("merged: 2\n", out)
         self.assertNotIn("alpha", out)
-        self.assertNotIn("closure anchor", out)
 
-    def test_active_change_prints_in_full_when_frozen(self):
-        self.frozen("alpha", "beta")
+    def test_active_change_prints_in_full_when_merged(self):
+        self.merged("alpha", "beta")
         out = self.text("--change", "alpha").stdout
         self.assertIn("* alpha [repository]", out)
-        self.assertIn("closure anchor", out)
-        self.assertIn("frozen: 1\n", out)
+        self.assertIn("stage=merged", out)
+        self.assertIn("merged: 1\n", out)
 
-    def test_frozen_packet_with_a_reason_prints_in_full(self):
+    def test_merged_packet_with_a_reason_prints_in_full(self):
         sys.path.insert(0, str(REPO_PY.parent))
         import repo  # noqa: E402
 
-        change = {"id": "alpha", "kind": "repository", "stage": "closed", "freshness": "frozen", "approval": "unverified",
-                  "readiness": "ready", "closure": "frozen", "closure_anchor": "abc", "artifacts": {},
-                  "reasons": [{"level": "warn", "code": "x", "message": "look here"}]}
+        change = {"id": "alpha", "kind": "repository", "stage": "merged", "freshness": "current", "approval": "none",
+                  "readiness": "blocked", "artifacts": {},
+                  "reasons": [{"level": "error", "code": "invalid-change", "message": "look here"}]}
         result = {"active": None, "identity_errors": [], "changes": [change], "surface": [], "changed_paths": [], "ok": True, "failures": []}
         out = io.StringIO()
         with contextlib.redirect_stdout(out):
             repo.print_status(result)
         self.assertIn("look here", out.getvalue())
-        self.assertNotIn("frozen:", out.getvalue())
+        self.assertNotIn("merged:", out.getvalue())
 
-    def test_edited_frozen_packet_prints_in_full_and_fails(self):
-        self.frozen("alpha")
-        self.write("changes/alpha/plan.md", "# edited\n")
-        proc = self.text()
-        self.assertEqual(proc.returncode, 1)
-        self.assertIn("alpha [repository]", proc.stdout)
-        self.assertNotIn("frozen: ", proc.stdout)
-
-    def test_no_frozen_line_without_frozen_packets(self):
+    def test_no_merged_line_without_merged_packets(self):
         self.packet("alpha", kind="repository")
-        self.assertNotIn("frozen: ", self.text().stdout)
+        self.assertNotIn("merged: ", self.text().stdout)
 
     def test_json_lists_every_packet(self):
-        self.frozen("alpha", "beta")
+        self.merged("alpha", "beta")
         self.assertEqual({c["id"] for c in self.status()["changes"]}, {"alpha", "beta"})
 
 
@@ -397,12 +361,11 @@ class PlaceholderArtifacts(RepoCase):
         self.assertIn("placeholder-artifact", self.codes(result, "init"))
         self.assertEqual(result["by_id"]["init"]["readiness"], "blocked")
 
-    def test_frozen_packet_with_the_marker_stays_frozen(self):
+    def test_merged_packet_with_the_marker_is_not_judged_again(self):
         self.marked()
-        self.close("init")
-        self.commit("close init")
+        self.commit("merge init")
         result = self.status()
-        self.assertEqual(result["by_id"]["init"]["closure"], "frozen")
+        self.assertEqual(result["by_id"]["init"]["stage"], "merged")
         self.assertNotIn("placeholder-artifact", self.codes(result, "init"))
 
     def test_other_kinds_are_unaffected(self):
@@ -420,10 +383,10 @@ class WriteScope(RepoCase):
                 self.assertIn("scope-path-escape", self.codes(self.status("--change", "alpha"), "alpha"))
 
     def test_changed_file_outside_scope_is_blocked(self):
+        self.git("switch", "-q", "-c", "change/alpha")
         self.packet("alpha", kind="repository", scope=["src/**"])
         self.approve("alpha", "plan.md")
         self.commit("packet")
-        self.git("switch", "-q", "-c", "change/alpha")
         self.write("src/ok.txt", "in scope\n")
         self.assertTrue(self.status()["ok"])
         self.write("docs/elsewhere.txt", "out of scope\n")
@@ -431,6 +394,7 @@ class WriteScope(RepoCase):
 
     def test_committed_diff_is_checked_against_explicit_base_and_head(self):
         base = self.git("rev-parse", "HEAD")
+        self.git("switch", "-q", "-c", "change/alpha")
         self.packet("alpha", kind="repository", scope=["src/**"])
         self.approve("alpha", "plan.md")
         self.write("lib/x.txt", "x\n")
@@ -440,9 +404,9 @@ class WriteScope(RepoCase):
         self.assertFailed(result, "lib/x.txt")
 
     def test_implementation_before_approval_is_blocked(self):
+        self.git("switch", "-q", "-c", "change/alpha")
         self.packet("alpha", kind="repository", scope=["src/**"])
         self.commit("packet")
-        self.git("switch", "-q", "-c", "change/alpha")
         self.write("changes/alpha/plan.md", "# Plan, still drafting\n")
         self.assertTrue(self.status()["ok"], "authoring the packet alone is allowed while pending")
         self.write("src/early.txt", "too early\n")
@@ -450,210 +414,101 @@ class WriteScope(RepoCase):
 
     def test_repository_change_cannot_edit_established_baseline(self):
         self.establish_baseline()
+        self.git("switch", "-q", "-c", "change/alpha")
         self.packet("alpha", kind="repository", scope=["spec.md"])
         self.approve("alpha", "plan.md")
         self.commit("packet")
-        self.git("switch", "-q", "-c", "change/alpha")
         self.write("spec.md", "# Spec\nsneaky\n")
         self.assertFailed(self.status(), "may not modify established root")
 
 
-class Closure(RepoCase):
-    def test_closure_before_delta_merged_is_blocked(self):
-        self.packet("init", kind="product-init", artifacts={"intent.md": "# I\n", "spec.md": "# S\n", "plan.md": "# P\n"})
-        self.approve("init", "intent.md", "spec.md", "plan.md")
-        self.close("init")
-        result = self.status("--change", "init")
-        self.assertIn("closure-unmerged", self.codes(result, "init"))
-        self.assertEqual(result["by_id"]["init"]["closure"], "invalid")
+class MergedPackets(RepoCase):
+    """A packet on the baseline branch's tip is merged: its pull request closed it."""
 
-    def test_candidate_closure_is_valid_before_merge(self):
-        self.git("switch", "-q", "-c", "change/init")
-        self.packet("init", kind="product-init", scope=["intent.md", "spec.md"], artifacts={"intent.md": "# I\n", "spec.md": "# S\n", "plan.md": "# P\n"})
-        self.approve("init", "intent.md", "spec.md", "plan.md")
-        self.write("intent.md", "# I\n")
-        self.write("spec.md", "# S\n")
-        self.close("init")
-        self.commit("close on the branch")
-        result = self.status("--change", "init")
+    def branch_change(self, scope):
+        self.git("switch", "-q", "-c", "change/alpha")
+        self.packet("alpha", kind="repository", scope=scope)
+        self.approve("alpha", "plan.md")
+        self.commit("packet")
+
+    def test_a_packet_on_the_baseline_is_merged(self):
+        self.establish_baseline()
+        result = self.status()
         change = result["by_id"]["init"]
-        self.assertEqual((change["stage"], change["closure"], change["readiness"]), ("closed", "candidate", "ready"))
+        self.assertEqual((change["stage"], change["freshness"]), ("merged", "current"))
         self.assertTrue(result["ok"], result["failures"])
 
-    def closed_candidate(self):
+    def test_a_merged_packet_ignores_later_baseline_evolution(self):
         self.establish_baseline()
-        self.git("switch", "-q", "-c", "change/imp")
-        self.packet("imp", kind="repository", scope=["src/**"])
-        self.approve("imp", "plan.md")
-        self.write("src/a.txt", "x\n")
-        self.close("imp")
-        self.commit("close imp")
+        self.write("spec.md", "# Spec\nv2\n")
+        self.commit("the root moves on")
+        result = self.status()
+        self.assertEqual(self.codes(result, "init"), {"merged"})
+        self.assertTrue(result["ok"], result["failures"])
 
-    def test_a_code_commit_after_closure_makes_it_stale(self):
-        self.closed_candidate()
-        self.assertEqual(self.status("--change", "imp")["by_id"]["imp"]["closure"], "candidate")
-        self.write("src/a.txt", "y\n")
-        self.commit("edit after closure")
-        result = self.status("--change", "imp")
-        self.assertEqual(result["by_id"]["imp"]["closure"], "invalid")
-        self.assertIn("closure-stale", self.codes(result, "imp"))
-        self.assertEqual(result["exit"], 1)
-
-    def test_a_refreshed_closure_is_current_again(self):
-        self.closed_candidate()
-        self.write("src/a.txt", "y\n")
-        self.close("imp")
-        self.commit("edit and refresh")
-        self.assertEqual(self.status("--change", "imp")["by_id"]["imp"]["closure"], "candidate")
-
-    def test_a_candidate_closure_needs_a_tree_digest(self):
-        self.closed_candidate()
-        closure = json.loads(self.read("changes/imp/closure.json"))
-        del closure["tree_sha256"]
-        self.write("changes/imp/closure.json", json.dumps(closure))
-        self.assertIn("closure-stale", self.codes(self.status("--change", "imp"), "imp"))
-
-    def test_a_frozen_closure_needs_no_tree_digest(self):
-        self.establish_baseline()
-        closure = json.loads(self.read("changes/init/closure.json"))
-        del closure["tree_sha256"]
-        self.git("reset", "-q", "--soft", "HEAD~1")
-        self.write("changes/init/closure.json", json.dumps(closure))
-        self.commit("close init")
-        self.assertEqual(self.status()["by_id"]["init"]["closure"], "frozen")
-
-    def test_an_ignored_packet_file_leaves_the_packet_digest_alone(self):
-        self.write(".gitignore", "*.tmp\n")
-        self.closed_candidate()
-        self.write("changes/imp/scratch.tmp", "x\n")
-        self.assertEqual(self.status("--change", "imp")["by_id"]["imp"]["closure"], "candidate")
-
-    def test_a_packet_symlink_digests_the_same_in_the_worktree_and_a_commit(self):
-        sys.path.insert(0, str(REPO_PY.parent))
-        import repo  # noqa: E402
-
-        self.packet("imp", kind="repository")
-        (self.root / "changes/imp/link").symlink_to("plan.md")
-        head = self.commit("packet")
-        ctx = repo.Context(root=self.root)
-        self.addCleanup(ctx.close)
-        self.assertEqual(repo.worktree_packet(self.root, "imp"), repo.tree_packet(ctx, head, "imp"))
-
-    def test_a_branch_behind_the_baseline_is_told_so(self):
-        self.establish_baseline()
-        self.git("switch", "-q", "-c", "change/imp")
-        self.packet("imp", kind="repository")
-        self.approve("imp", "plan.md")
-        self.commit("packet")
-        self.git("switch", "-q", "main")
-        self.packet("other", kind="repository")
-        self.approve("other", "plan.md")
-        self.close("other")
-        self.commit("close other")
-        self.git("switch", "-q", "change/imp")
-        self.assertFailed(self.status("--change", "imp"), "if this branch is behind the baseline, update it")
-
-    def test_closure_before_approval_is_blocked(self):
-        self.packet("alpha", kind="repository")
-        self.close("alpha")
-        result = self.status("--change", "alpha")
-        self.assertIn("closure-before-approval", self.codes(result, "alpha"))
-        self.assertEqual(result["by_id"]["alpha"]["readiness"], "blocked")
-
-    def test_closure_naming_its_own_commit_is_rejected(self):
-        self.packet("alpha", kind="repository")
-        self.approve("alpha", "plan.md")
-        self.close("alpha", commit="0" * 40)
-        result = self.status("--change", "alpha")
-        self.assertIn("closure-invalid", self.codes(result, "alpha"))
-        self.assertTrue(any("never names its own commit" in r["message"] for r in result["by_id"]["alpha"]["reasons"]))
-
-    def test_closure_without_evidence_is_invalid(self):
-        self.packet("alpha", kind="repository")
-        self.approve("alpha", "plan.md")
-        self.close("alpha", evidence=())
-        self.assertEqual(self.status("--change", "alpha")["by_id"]["alpha"]["closure"], "invalid")
-
-    def test_squash_merge_anchor_is_frozen(self):
-        anchor = self.establish_baseline()
-        change = self.status()["by_id"]["init"]
-        self.assertEqual((change["closure"], change["freshness"], change["closure_anchor"]), ("frozen", "frozen", anchor))
-
-    def test_merge_commit_is_the_first_parent_anchor(self):
-        self.git("switch", "-q", "-c", "change/alpha")
-        self.packet("alpha", kind="repository")
-        self.approve("alpha", "plan.md")
-        self.commit("packet")
-        self.close("alpha")
-        self.commit("close alpha on the side branch")
+    def test_a_merge_commit_marks_the_packet_merged(self):
+        self.branch_change(["src/**"])
+        self.assertEqual(self.status("--change", "alpha")["by_id"]["alpha"]["stage"], "implementation")
         self.git("switch", "-q", "main")
         self.git("merge", "-q", "--no-ff", "-m", "merge alpha", "change/alpha")
-        merge = self.git("rev-parse", "HEAD")
-        change = self.status()["by_id"]["alpha"]
-        self.assertEqual((change["closure"], change["closure_anchor"]), ("frozen", merge))
+        self.assertEqual(self.status()["by_id"]["alpha"]["stage"], "merged")
 
-    def test_frozen_packet_edit_is_an_integrity_failure(self):
-        self.establish_baseline()
-        self.write("changes/init/plan.md", "# Plan, rewritten after closure\n")
-        result = self.status()
-        self.assertIn("frozen-integrity", self.codes(result, "init"))
-        self.assertFailed(result, "closed packet changed after closure anchor")
-
-    def test_deleted_frozen_closure_fails(self):
+    def test_a_merged_packet_cannot_be_worked_on_again(self):
         self.establish_baseline()
         self.git("switch", "-q", "-c", "change/init")
-        self.git("rm", "-q", "changes/init/closure.json")
-        self.commit("reopen")
-        self.assertFailed(self.status("--change", "init"), "removed from the candidate")
-        self.write("pr.md", "Change-ID: init\n")
-        self.assertFailed(self.status("--branch=", "--pr-body", "pr.md", "--base", "main", "--head", "HEAD"), "removed from the candidate")
+        self.write("src/late.txt", "x\n")
+        result = self.status("--change", "init")
+        self.assertEqual(result["by_id"]["init"]["readiness"], "blocked")
+        self.assertFailed(result, "before the change is ready")
 
-    def test_deleted_frozen_packet_fails_for_another_change(self):
+    def test_editing_a_merged_packet_outside_scope_fails(self):
         self.establish_baseline()
-        self.git("switch", "-q", "-c", "change/alpha")
-        self.packet("alpha", kind="repository", scope=["changes/**"])
-        self.approve("alpha", "plan.md")
+        self.branch_change(["src/**"])
+        self.write("changes/init/plan.md", "# Plan, rewritten after merge\n")
+        self.assertFailed(self.status("--change", "alpha"), "outside declared write_scope")
+
+    def test_editing_a_merged_packet_inside_scope_passes(self):
+        self.establish_baseline()
+        self.branch_change(["changes/init/**"])
+        self.write("changes/init/plan.md", "# Plan, corrected with approval\n")
+        result = self.status("--change", "alpha")
+        self.assertTrue(result["ok"], result["failures"])
+
+    def test_deleting_merged_packets_needs_scope(self):
+        self.establish_baseline()
+        self.branch_change(["src/**"])
         self.git("rm", "-rq", "changes/init")
         self.commit("remove init")
-        self.assertFailed(self.status("--change", "alpha"), "init: frozen packet removed from the candidate")
+        self.assertFailed(self.status("--change", "alpha"), "outside declared write_scope")
+        self.set_scope("alpha", ["src/**", "changes/**"])
+        self.run_repo("approve", "alpha", "plan.md", "--by", "owner")
+        result = self.status("--change", "alpha")
+        self.assertTrue(result["ok"], result["failures"])
 
-    def test_deletion_on_the_baseline_branch_passes(self):
+    def test_a_deleted_id_can_be_reused(self):
         self.establish_baseline()
         self.git("rm", "-rq", "changes/init")
-        self.commit("remove the closed packet")
-        self.assertTrue(self.status()["ok"])
-
-    def test_deleted_id_can_be_reused(self):
-        self.establish_baseline()
-        self.git("rm", "-rq", "changes/init")
-        self.commit("remove the closed packet")
+        self.commit("remove the merged packet")
         self.git("switch", "-q", "-c", "change/init")
         self.packet("init", kind="repository", scope=["src/**"])
         self.approve("init", "plan.md")
-        self.close("init")
         self.commit("reuse the id")
-        result = self.status("--change", "init")
-        self.assertEqual(result["by_id"]["init"]["closure"], "candidate")
-        self.assertTrue(result["ok"], result["failures"])
+        self.assertEqual(self.status("--change", "init")["by_id"]["init"]["stage"], "implementation")
         self.git("switch", "-q", "main")
         self.git("merge", "-q", "--squash", "change/init")
-        anchor = self.commit("merge the reused id")
-        change = self.status()["by_id"]["init"]
-        self.assertEqual((change["closure"], change["closure_anchor"]), ("frozen", anchor))
+        self.commit("merge the reused id")
+        self.assertEqual(self.status()["by_id"]["init"]["stage"], "merged")
 
-    def test_frozen_change_survives_later_baseline_evolution(self):
+    def test_without_a_baseline_ref_nothing_is_merged(self):
         self.establish_baseline()
-        self.packet("beh", kind="behavior", scope=["src/**"], artifacts={"spec.md": "# Spec\nv2\n", "plan.md": "# P\n"})
-        self.approve("beh", "spec.md", "plan.md")
-        self.write("spec.md", "# Spec\nv2\n")
-        self.close("beh")
-        self.commit("close beh")
-        result = self.status()
-        self.assertEqual(result["by_id"]["init"]["closure"], "frozen")
-        self.assertEqual(result["by_id"]["beh"]["closure"], "frozen")
-        self.assertTrue(result["ok"], result["failures"])
+        self.write("checks.json", json.dumps({"schema": 1, "baseline_branch": "trunk", "checks": []}))
+        self.git("switch", "-q", "-c", "change/alpha")
+        self.packet("alpha", kind="repository", scope=["src/**"])
+        result = self.status("--change", "alpha")
+        self.assertNotEqual(result["by_id"]["init"]["stage"], "merged")
+        self.assertIn("diff-base", self.codes(result, "alpha"))
 
-    def test_shallow_history_blocks_closure(self):
+    def test_a_shallow_clone_still_sees_merged_packets(self):
         self.establish_baseline()
         self.commit("one more")
         clone = self.root.parent / "shallow"
@@ -662,9 +517,8 @@ class Closure(RepoCase):
             env={**os.environ, **support.GIT_ENV}, check=True, capture_output=True,
         )
         result = self.status(cwd=clone)
-        self.assertEqual(result["by_id"]["init"]["closure"], "invalid")
-        self.assertIn("closure-history", self.codes(result, "init"))
-        self.assertFailed(result, "shallow history")
+        self.assertEqual(result["by_id"]["init"]["stage"], "merged")
+        self.assertTrue(result["ok"], result["failures"])
 
 
 class Surfaces(RepoCase):
@@ -821,221 +675,48 @@ class PullRequestGate(RepoCase):
         self.git("switch", "-q", "-c", "change/alpha")
         self.packet("alpha", kind="repository", scope=["src/**", "changes/**"])
 
-    def pr(self):
+    def pr(self, cid="alpha"):
         body = self.root.parent / "body.md"
-        body.write_text("Change-ID: alpha\n")
+        body.write_text(f"Change-ID: {cid}\n")
         return self.status("--branch=", "--pr-body", str(body), "--base", "main", "--head", "HEAD")
 
     def ready(self):
         self.approve("alpha", "plan.md")
 
     def test_unapproved_packet_fails(self):
+        self.write("src/a.txt", "x\n")
         self.commit("draft")
-        self.assertFailed(self.pr(), "needs a candidate closure")
-        self.assertTrue(self.status("--change", "alpha")["ok"], "local drafting stays allowed")
+        self.assertFailed(self.pr(), "before the change is ready")
 
-    def test_approved_packet_without_closure_fails(self):
+    def test_ready_packet_passes_without_any_closure_record(self):
         self.ready()
-        self.commit("approved")
-        self.assertFailed(self.pr(), "needs a candidate closure")
-        self.assertTrue(self.status("--change", "alpha")["ok"], "local work stays allowed")
-
-    def test_invalid_closure_fails(self):
-        self.ready()
-        self.close("alpha", packet_sha256="sha256:" + "0" * 64)
-        self.commit("closed")
-        self.assertFailed(self.pr(), "needs a candidate closure")
-
-    def test_candidate_closure_passes(self):
-        self.ready()
-        self.close("alpha")
-        self.commit("closed")
+        self.write("src/a.txt", "x\n")
+        self.commit("implemented")
         result = self.pr()
         self.assertTrue(result["ok"], result["failures"])
-
-    def test_second_packet_fails(self):
-        self.ready()
-        self.packet("beta", kind="repository")
-        self.close("alpha")
-        self.commit("two packets")
-        self.assertFailed(self.pr(), "touches other packets: ['beta']")
+        self.assertFalse(list(self.root.glob("changes/*/closure.json")))
 
     def test_template_packet_edit_passes(self):
         self.write("changes/_template/plan.md", "# Plan\n")
-        self.commit("template")
         self.ready()
-        self.close("alpha")
-        self.commit("closed")
+        self.commit("template")
         result = self.pr()
         self.assertTrue(result["ok"], result["failures"])
 
-
-class BatchedReads(RepoCase):
-    """Anchors and packets are read in one pass, and mean what per-packet git commands meant."""
-
-    def closed(self, cid="alpha", write=None):
-        self.packet(cid, kind="repository")
-        self.approve(cid, "plan.md")
-        if write:
-            write()
-        self.close(cid)
-
-    def anchor(self, cid="alpha"):
-        sys.path.insert(0, str(REPO_PY.parent))
-        import repo  # noqa: E402
-
-        ctx = repo.Context(root=self.root)
-        self.addCleanup(ctx.close)
-        with mock.patch.dict(os.environ, support.GIT_ENV):
-            return repo.find_closure_anchor(ctx, cid)
-
-    def assertFrozenAt(self, anchor, cid="alpha"):
-        change = self.status()["by_id"][cid]
-        self.assertEqual((change["closure"], change["closure_anchor"]), ("frozen", anchor))
-
-    def test_closure_in_the_root_commit_anchors_there(self):
-        self.git("update-ref", "-d", "HEAD")
-        self.closed()
-        self.assertFrozenAt(self.commit("root with a closure"))
-
-    def test_merge_commit_anchors_on_the_first_parent(self):
-        self.git("switch", "-q", "-c", "change/alpha")
-        self.closed()
-        self.commit("closed on the side branch")
+    def test_a_carried_spec_must_be_merged_into_the_root(self):
         self.git("switch", "-q", "main")
-        self.git("merge", "-q", "--no-ff", "-m", "merge alpha", "change/alpha")
-        self.assertFrozenAt(self.git("rev-parse", "HEAD"))
-
-    def test_a_newer_side_commit_is_not_on_the_first_parent_chain(self):
-        self.git("switch", "-q", "-c", "side")
-        self.closed()
-        with mock.patch.dict(os.environ, {"GIT_COMMITTER_DATE": "2099-01-01T00:00:00Z"}):
-            self.commit("closed later, on the side")
-        self.git("switch", "-q", "main")
+        self.git("branch", "-q", "-D", "change/alpha")
         self.git("clean", "-fdq")
-        self.closed()
-        anchor = self.commit("closed on main")
-        self.git("merge", "-q", "--no-commit", "-s", "ours", "side")
-        closure = json.loads(self.read("changes/alpha/closure.json"))
-        self.write("changes/alpha/closure.json", json.dumps({**closure, "evidence": ["differs from both parents"]}))
-        self.commit("merge side with a third closure")
-        self.assertEqual(self.anchor(), anchor)
-
-    def test_a_renamed_packet_anchors_at_the_rename(self):
-        self.closed()
-        (self.root / "changes/alpha").rename(self.root / "changes/beta")
-        self.commit("under another name")
-        (self.root / "changes/beta").rename(self.root / "changes/alpha")
-        self.assertFrozenAt(self.commit("rename"))
-
-    def test_a_copied_closure_anchors_at_the_copy(self):
-        self.closed()
-        (self.root / "changes/alpha").rename(self.root / "changes/beta")
-        self.commit("under another name")
-        shutil.copytree(self.root / "changes/beta", self.root / "changes/alpha")
-        self.assertFrozenAt(self.commit("copy"))
-
-    def test_a_closure_deleted_at_the_tip_has_no_anchor(self):
-        self.closed()
-        self.commit("closed")
-        self.git("switch", "-q", "-c", "keep")
-        self.git("switch", "-q", "main")
-        self.git("rm", "-q", "changes/alpha/closure.json")
-        self.commit("delete on main")
-        self.git("switch", "-q", "keep")
-        self.assertIsNone(self.anchor())
-        self.assertIsNone(self.status()["by_id"]["alpha"]["closure_anchor"])
-
-    def test_delete_and_re_add_anchors_at_the_re_add(self):
-        self.closed()
-        self.commit("closed")
-        closure = self.read("changes/alpha/closure.json")
-        self.git("rm", "-q", "changes/alpha/closure.json")
-        self.commit("delete")
-        self.write("changes/alpha/closure.json", closure)
-        self.assertFrozenAt(self.commit("re-add"))
-
-    def test_a_later_edit_does_not_move_the_anchor(self):
-        self.closed()
-        anchor = self.commit("closed")
-        path = self.root / "changes/alpha/closure.json"
-        path.write_text(path.read_text() + "\n")
-        self.commit("edit the closure")
-        self.assertEqual(self.anchor(), anchor)
-
-    def test_a_gitlink_at_the_closure_path_is_no_closure(self):
-        self.packet("alpha", kind="repository")
-        head = self.commit("packet")
-        self.git("update-index", "--add", "--cacheinfo", f"160000,{head},changes/alpha/closure.json")
-        self.git("commit", "-q", "-m", "gitlink")
-        self.assertIsNone(self.anchor())
-
-    def test_a_gitlink_inside_a_closed_packet_is_skipped(self):
-        self.packet("alpha", kind="repository")
-        self.approve("alpha", "plan.md")
-        head = self.commit("packet")
-        self.git("update-index", "--add", "--cacheinfo", f"160000,{head},changes/alpha/vendor")
-        self.close("alpha")
-        self.git("add", "changes/alpha/closure.json")
-        self.git("commit", "-q", "-m", "closed")
-        self.assertFrozenAt(self.git("rev-parse", "HEAD"))
-
-    def test_a_symlink_closure_is_a_closure(self):
-        self.packet("alpha", kind="repository")
-        (self.root / "changes/alpha/closure.json").symlink_to("plan.md")
-        self.assertEqual(self.commit("symlink"), self.anchor())
-
-    def test_a_directory_at_the_closure_path_is_no_closure(self):
-        self.packet("alpha", kind="repository")
-        self.write("changes/alpha/closure.json/inner", "x\n")
-        self.commit("directory")
-        self.assertIsNone(self.anchor())
-
-    def test_nested_and_non_ascii_names_stay_frozen(self):
-        self.closed(write=lambda: self.write('changes/alpha/sub dir/niño "q".md', "n\n"))
-        self.assertFrozenAt(self.commit("closed"))
-
-    def test_a_non_utf8_name_in_a_closed_packet_fails_as_a_crash(self):
-        self.closed()
-        oid = self.git("hash-object", "-w", "changes/alpha/plan.md")
-        self.git("update-index", "--add", "--cacheinfo", f"100644,{oid},changes/alpha/bad\udcff.txt")
-        self.git("add", "changes/alpha/closure.json")
-        self.git("commit", "-q", "-m", "closed")
-        proc = self.run_repo("status", "--json", "--ci")
-        self.assertIn("UnicodeDecodeError", proc.stderr)
-        self.assertNotEqual(proc.returncode, 0)
-
-    def test_the_object_process_exits_when_closed(self):
-        sys.path.insert(0, str(REPO_PY.parent))
-        import repo  # noqa: E402
-
-        ctx = repo.Context(root=self.root)
-        proc = ctx.objects.proc
-        self.assertEqual(ctx.objects.read("HEAD")[0], "commit")
-        self.assertIsNone(ctx.objects.read("HEAD:no such file"))
-        ctx.close()
-        self.assertEqual(proc.returncode, 0)
-        ctx.close()
-
-    def test_tampering_after_the_anchor_is_seen(self):
-        self.closed()
-        self.commit("closed")
-        self.write("changes/alpha/added.md", "x\n")
-        self.assertFailed(self.status(), "closed packet changed after closure anchor")
-
-
-class BatchedReadsUnderHostileConfig(BatchedReads):
-    """A user's git configuration cannot change what the batched commands report."""
-
-    def setUp(self):
-        tmp = tempfile.TemporaryDirectory()
-        self.addCleanup(tmp.cleanup)
-        config = Path(tmp.name) / "gitconfig"
-        config.write_text("[log]\n\tshowRoot = false\n\tdiffMerges = separate\n[diff]\n\trenames = copies\n\tignoreSubmodules = all\n")
-        patcher = mock.patch.dict(support.GIT_ENV, {"GIT_CONFIG_GLOBAL": str(config)})
-        patcher.start()
-        self.addCleanup(patcher.stop)
-        super().setUp()
+        self.establish_baseline()
+        self.git("switch", "-q", "-c", "change/beh")
+        self.packet("beh", kind="behavior", scope=["spec.md"], artifacts={"spec.md": "# Spec\nv2\n", "plan.md": "# P\n"})
+        self.approve("beh", "spec.md", "plan.md")
+        self.commit("approved")
+        self.assertFailed(self.pr("beh"), "carried-unmerged")
+        self.write("spec.md", "# Spec\nv2\n")
+        self.commit("merge the accepted spec into the root")
+        result = self.pr("beh")
+        self.assertTrue(result["ok"], result["failures"])
 
 
 if __name__ == "__main__":

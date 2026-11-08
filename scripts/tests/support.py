@@ -317,7 +317,7 @@ class RepoCase(unittest.TestCase):
         path.write_text(json.dumps(data, indent=2) + "\n")
 
     def establish_baseline(self):
-        """Close a product-init change so root intent/spec are established."""
+        """Merge a product-init change on `main`, so root intent/spec are established and its packet is merged."""
         self.packet(
             "init",
             kind="product-init",
@@ -326,40 +326,7 @@ class RepoCase(unittest.TestCase):
         self.approve("init", "intent.md", "spec.md", "plan.md")
         self.write("intent.md", "# Intent\nreal\n")
         self.write("spec.md", "# Spec\nreal\n")
-        self.close("init")
-        return self.commit("close init")
-
-    def close(self, cid, evidence=("ci run 1",), **override):
-        sys.path.insert(0, str(REPO_PY.parent))
-        import repo  # noqa: E402
-
-        files = repo.worktree_packet(self.root, cid)
-        carried = [n for n in ("intent.md", "spec.md") if n in files]
-        data = {
-            "schema": 1,
-            "baseline": {n: digest(self.read(n)) for n in carried},
-            "packet_sha256": repo.packet_digest(files),
-            "tree_sha256": repo.candidate_digest(self.root, cid),
-            "evidence": list(evidence),
-            **override,
-        }
-        self.write(f"changes/{cid}/closure.json", json.dumps(data, indent=2) + "\n")
-
-    def verify_evidence(self, cid, rel=".evidence/run/evidence.json", **override):
-        sys.path.insert(0, str(REPO_PY.parent))
-        import repo  # noqa: E402
-
-        tree = repo.candidate_digest(self.root, cid)
-        data = {
-            "schema": 1,
-            "source": {"commit": self.git("rev-parse", "HEAD"), "dirty": True, "tree_sha256": tree},
-            "change": cid,
-            "complete": True,
-            "checks": [{"id": "check", "status": "passed"}],
-            **override,
-        }
-        self.write(rel, json.dumps(data, indent=2) + "\n")
-        return rel
+        return self.commit("merge init")
 
     # -- running repo.py -------------------------------------------------------
 

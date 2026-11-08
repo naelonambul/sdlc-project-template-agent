@@ -11,7 +11,7 @@ idea
   -> changes/<id>/  (intent -> spec -> plan, each approved by the owner in order)
   -> implementation + verification, inside the change's write scope
   -> merge accepted intent/spec into the root baseline
-  -> closure.json -> pull request -> merge (squash by default)
+  -> pull request -> merge (squash by default); the merged pull request closes the change
 ```
 
 The root `intent.md` and `spec.md` are the durable product baseline. A new product's first change is `product-init`, which establishes them. `python3 scripts/repo.py status` computes every change's stage, freshness, approval and readiness. See `changes/README.md`.
@@ -19,20 +19,12 @@ The root `intent.md` and `spec.md` are the durable product baseline. A new produ
 ## Quick start
 
 1. Create a new repository from this GitHub template and clone it.
-2. Remove the template's own closed change packets. Do this before protecting `main`, because it commits directly to it, and include the push: until then `status` fails with `frozen packet removed from the candidate`, which is expected.
-
-   ```sh
-   find changes -mindepth 1 -maxdepth 1 -type d ! -name _template -exec git rm -rq {} +
-   git commit -m "Remove the template's closed change packets"
-   git push origin main
-   ```
-
-3. Configure the repository once, as `docs/host-setup.md` describes: add it to the GitHub App's installation, so the App account can open pull requests, your account reviews and merges them, and `main` is protected.
-4. Create the `product-init` packet: `python3 scripts/repo.py new <id> --kind product-init --title "<summary>"`. It copies the root `intent.md` and `spec.md` into the packet and adds them to `write_scope`. Pass `--scope` for every other path the change will touch, including `checks.json`, before the plan is approved, because the approval binds the scope.
-5. Ask an agent to interrogate the idea until the intent is concrete, then approve `intent.md` yourself: `python3 scripts/repo.py approve <id> intent.md --by <you>` records a digest-bound claim for exactly the bytes you reviewed. The agent commits and pushes it.
-6. Draft and approve `spec.md`, then the change's `plan.md`, in that order.
-7. Implement only when `python3 scripts/repo.py status --change <id>` reports `readiness=ready`.
-8. Verify, close and open a pull request as the Lifecycle section of `changes/README.md` describes, and review against `REVIEW.md`.
+2. Configure the repository once, as `docs/host-setup.md` describes: add it to the GitHub App's installation, so the App account can open pull requests, your account reviews and merges them, and `main` is protected.
+3. Create the `product-init` packet: `python3 scripts/repo.py new <id> --kind product-init --title "<summary>"`. It copies the root `intent.md` and `spec.md` into the packet and adds them to `write_scope`. Pass `--scope` for every other path the change will touch, including `checks.json`, before the plan is approved, because the approval binds the scope.
+4. Ask an agent to interrogate the idea until the intent is concrete, then approve `intent.md` yourself: `python3 scripts/repo.py approve <id> intent.md --by <you>` records a digest-bound claim for exactly the bytes you reviewed. The agent commits and pushes it.
+5. Draft and approve `spec.md`, then the change's `plan.md`, in that order.
+6. Implement only when `python3 scripts/repo.py status --change <id>` reports `readiness=ready`.
+7. Verify and open a pull request as the Lifecycle section of `changes/README.md` describes, and review against `REVIEW.md`.
 
 See `.agents/skills/sdlc-artifacts/SKILL.md` for the workflow.
 
@@ -42,7 +34,7 @@ See `.agents/skills/sdlc-artifacts/SKILL.md` for the workflow.
 - `REVIEW.md`: shared review rubric.
 - `intent.md`, `spec.md`: durable product baseline (why, and what must be true).
 - `changes/`: one packet per change, with its own plan; `changes/README.md` defines the model.
-- `scripts/repo.py`: `status` computes change state and enforces gates; `verify` runs registered checks with routing and evidence; `new`, `approve` and `close` write packet records mechanically. Standard-library Python only.
+- `scripts/repo.py`: `status` computes change state and enforces gates; `verify` runs registered checks with routing and evidence; `new` and `approve` write packet records mechanically. Standard-library Python only.
 - `checks.json`: the check registry (exact argv, cwd, timeout, routed paths, required tools, group). `status` warns when product files are tracked but only the template's own check is registered.
 - `scripts/hooks/guard.py`: the agent-neutral in-session guard; see `scripts/hooks/README.md`. `.claude/settings.json` is the thin Claude Code adapter, and `status` checks that it points at tracked scripts.
 - `.agents/skills/`: on-demand shared agent procedures. `.claude/skills/` holds thin symlink adapters.
