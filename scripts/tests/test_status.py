@@ -663,6 +663,21 @@ class CheckWiring(RepoCase):
         self.configure([], self.WORKFLOW)
         self.assertFailed(self.status(), "does not declare")
 
+    def test_a_group_run_directly_is_wired(self):
+        self.configure(["core"], "jobs:\n  a:\n    steps:\n      - run: true\n")
+        self.assertTrue(self.status()["ok"])
+
+    def test_a_group_with_one_check_not_run_is_unwired(self):
+        checks = [{"id": i, "group": "core", "argv": ["python3", "-c", i], "cwd": ".", "timeout_seconds": 5, "paths": ["**"]} for i in ("1", "2")]
+        self.write("checks.json", json.dumps({"schema": 1, "checks": checks}))
+        self.write(".github/workflows/repository.yml", "jobs:\n  a:\n    steps:\n      - run: python3 -c 1\n")
+        self.commit("half wired")
+        self.assertFailed(self.status(), "check group 'core' has no")
+
+    def test_a_commented_direct_run_is_not_wired(self):
+        self.configure(["core"], "jobs:\n  a:\n    steps:\n      # - run: true\n      - run: echo hi # true\n")
+        self.assertFailed(self.status(), "check group 'core' has no")
+
     def test_invalid_checks_json_fails_status(self):
         self.write("checks.json", json.dumps({"schema": 1, "checks": [{"id": "x", "argv": "make test"}]}))
         self.commit("bad")

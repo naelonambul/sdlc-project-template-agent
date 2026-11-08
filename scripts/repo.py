@@ -858,7 +858,7 @@ WORKFLOW = Path(".github/workflows/repository.yml")
 
 
 def config_findings(ctx: Context) -> list[Reason]:
-    """checks.json must be valid, and every check group must have exactly the CI job that runs it."""
+    """checks.json must be valid, and CI must run every check group, through `repo.py verify --group` or directly."""
     config = load_config(ctx.root)
     if not config:
         return []
@@ -881,9 +881,16 @@ def config_findings(ctx: Context) -> list[Reason]:
         return findings
     declared = {c.get("group", "core") for c in config["checks"]}
     uncommented = re.sub(r"(?m)(^|\s)#.*$", "", workflow.read_text())
-    wired = set(re.findall(r"repo\.py verify\b[^\n]*?--group[ =](\S+)", uncommented))
-    for group in sorted(declared - wired):
-        findings.append(Reason("error", "checks-unwired", f"check group {group!r} has no `repo.py verify --group {group}` job in {WORKFLOW}"))
+    through_verify = set(re.findall(r"repo\.py verify\b[^\n]*?--group[ =](\S+)", uncommented))
+    # A group is also wired when CI runs every one of its checks directly, outside repo.py.
+    steps = {m.strip() for m in re.findall(r"(?m)^\s*(?:-\s+)?run:[ \t]*(\S.*)$", uncommented)}
+    direct = {
+        group for group in declared
+        if all(" ".join(c["argv"]) in steps for c in config["checks"] if c.get("group", "core") == group)
+    }
+    for group in sorted(declared - through_verify - direct):
+        findings.append(Reason("error", "checks-unwired", f"check group {group!r} has no CI job in {WORKFLOW}: run `repo.py verify --group {group}`, or each of its checks' argv as a `run:` step"))
+    wired = through_verify
     for group in sorted(wired - declared):
         findings.append(Reason("error", "checks-unwired", f"{WORKFLOW} runs group {group!r}, which checks.json does not declare"))
     return findings
