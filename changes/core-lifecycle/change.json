@@ -1,0 +1,39 @@
+{
+  "schema": 1,
+  "id": "core-lifecycle",
+  "kind": "repository",
+  "title": "Make the merged pull request the closure: remove closure.json, frozen anchors and the template's closed packets",
+  "base": {
+    "ref": "main",
+    "commit": "bccaed3f386e4c80d17a5865f68c512db3ffe876"
+  },
+  "baseline": {},
+  "write_scope": [
+    "scripts/repo.py",
+    "scripts/README.md",
+    "scripts/hooks/guard.py",
+    "scripts/hooks/README.md",
+    "scripts/tests/support.py",
+    "scripts/tests/test_status.py",
+    "scripts/tests/test_approve_close.py",
+    "scripts/tests/test_new.py",
+    "scripts/tests/test_guard.py",
+    "changes/**",
+    "README.md",
+    "AGENTS.md",
+    ".agents/skills/sdlc-artifacts/SKILL.md",
+    ".agents/skills/change-execution/references/worker-brief.md",
+    "docs/host-setup.md",
+    ".gitattributes"
+  ],
+  "approvals": [
+    {
+      "artifact": "plan.md",
+      "sha256": "sha256:5fcb12e12a642ee4608f22b125823ded79ba16cb5cc71f49210e1e58d1bb3946",
+      "by": "naelonambul",
+      "at": "2026-11-08T16:02:26Z",
+      "write_scope_sha256": "sha256:a799530f2de47360a81c65f29bad8ccefb54e63f5e505cd7fa4504eb0f381a06",
+      "note": "Owner approved these exact bytes in session (answer: 'Approve, record it') after choosing the recommended answers to the open questions."
+    }
+  ]
+}
