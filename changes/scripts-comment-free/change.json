@@ -1,0 +1,25 @@
+{
+  "schema": 1,
+  "id": "scripts-comment-free",
+  "kind": "repository",
+  "title": "Owned Python under scripts/ carries no comments or docstrings, enforced by a control-plane test",
+  "base": {
+    "ref": "main",
+    "commit": "51ca5887988429289bb33f03fa39faf5b67c2c28"
+  },
+  "baseline": {},
+  "write_scope": [
+    "scripts/**",
+    "docs/agent-surfaces.md"
+  ],
+  "approvals": [
+    {
+      "artifact": "plan.md",
+      "sha256": "sha256:f3691f233502337c7e0b35c5165a7064596201c8a17a8d8898e627d392631e62",
+      "by": "naelonambul",
+      "at": "2026-11-15T15:44:41Z",
+      "write_scope_sha256": "sha256:1f46a0a608404b4e944d85ddecc52113deb2b2b14767712273284a25973cefdd",
+      "note": "Owner said '\uc2b9\uc778' in session after the plan (sha256:f3691f23...) and write_scope [scripts/**, docs/agent-surfaces.md] were presented with the approve command."
+    }
+  ]
+}
