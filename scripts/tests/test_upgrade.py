@@ -5,6 +5,7 @@ import json
 import os
 import re
 import subprocess
+import tempfile
 import unittest
 from pathlib import Path
 
@@ -336,6 +337,26 @@ class Upgrade(RepoCase):
         self.assertIn(f"upgrade --template <template clone> --to {self.c['c3']}", drift[0])
 
 
+def template_itself(root: Path) -> bool:
+    try:
+        config = json.loads((root / "checks.json").read_text())
+    except (OSError, ValueError):
+        return True
+    return not (isinstance(config, dict) and "template" in config)
+
+
+class TemplateItself(unittest.TestCase):
+    def test_a_pinned_repository_is_an_adopter(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            self.assertTrue(template_itself(root))
+            (root / "checks.json").write_text(json.dumps({"schema": 1, "checks": []}))
+            self.assertTrue(template_itself(root))
+            (root / "checks.json").write_text(json.dumps({"schema": 1, "checks": [], "template": {"commit": "0" * 40}}))
+            self.assertFalse(template_itself(root))
+
+
+@unittest.skipUnless(template_itself(PROJECT), "checks.json has a template pin: these are the template's own invariants, and the pin covers the adopter")
 class Completeness(unittest.TestCase):
     def tracked(self) -> list:
         out = subprocess.run(["git", "ls-files", "-z"], cwd=PROJECT, capture_output=True, text=True, check=True).stdout

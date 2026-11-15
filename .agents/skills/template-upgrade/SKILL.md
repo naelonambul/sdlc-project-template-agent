@@ -67,5 +67,6 @@ If `.github/workflows/repository.yml` changed, the agent identity cannot push it
 ## 8. Close
 
 - Write the report's `pin` value to `checks.json` as `"template"`.
+  Once it is recorded, the template's own completeness tests in `scripts/tests/test_upgrade.py` are skipped; the pin covers what they check.
 - `repo.py status --change <id>` is ok and `repo.py verify --change <id> --full` is complete.
 - One pull request, as for any change.
