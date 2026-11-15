@@ -72,6 +72,10 @@ Claude Code discovers these skills through thin `.claude/skills/<name>` symlinks
 
 Initialization decides the codebase before code lands. The `product-init` spec decides the folder structure, the dependency direction and where a new feature goes; when you have no preference the agent recommends feature-based vertical slices, and it researches alternatives when you ask. When the stack is chosen, establish the repository-native build, test, lint, format-check, type-check, boundary and comment checks. Register each in `checks.json`, decide every role in its `gates`, and give checks that need a new toolchain their own group and CI job. `repo.py status` fails once a product path is tracked and a gate is undecided. Comments are off by default; see the `repository-quality` skill. Then do the one-time GitHub setup in `docs/host-setup.md`; settings such as branch protection are never inherited from a GitHub template.
 
+## Upgrading
+
+A repository built on the template takes later template commits through one `repository` change: `repo.py upgrade` reports what changes, and the `template-upgrade` skill covers the rest. The `template` pin in `checks.json` then keeps the copied control plane honest.
+
 ## Source material
 
 The structure is informed by Anthropic's *The AI-Native SDLC playbook* (August 21, 2026), especially its artifact-driven handoffs, human gates, short always-loaded context, skills, deterministic guardrails, feedback loops, independent verification, PR review policy, and continuous evals.

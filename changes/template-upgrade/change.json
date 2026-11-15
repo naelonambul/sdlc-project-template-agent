@@ -1,0 +1,30 @@
+{
+  "schema": 1,
+  "id": "template-upgrade",
+  "kind": "repository",
+  "title": "template-upgrade: a pinned, diffable upgrade path for repositories built on the template",
+  "base": {
+    "ref": "main",
+    "commit": "4f999693d37b9d33f9acd83203061f66a4adcbc5"
+  },
+  "baseline": {},
+  "write_scope": [
+    ".agents/skills/template-upgrade/**",
+    ".claude/skills/template-upgrade",
+    "scripts/repo.py",
+    "scripts/tests/**",
+    "scripts/README.md",
+    "README.md",
+    "docs/agent-surfaces.md"
+  ],
+  "approvals": [
+    {
+      "artifact": "plan.md",
+      "sha256": "sha256:6cf0358fb79250d83a835ebac656a3b96f496aac85ccfbf288d44579b9308908",
+      "by": "naelonambul",
+      "at": "2026-11-15T21:24:24Z",
+      "write_scope_sha256": "sha256:aaf2bdcf03987061082b148154aefd3319ffa6f04f0b87e3c6b265962a1d75ec",
+      "note": "owner: \uc2b9\uc778 (plan sha256:6cf0358f\u2026, 2026-11-16)"
+    }
+  ]
+}

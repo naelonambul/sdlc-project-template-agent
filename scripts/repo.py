@@ -1,11 +1,13 @@
 from __future__ import annotations
 
 import argparse
+import ast
 import datetime as _dt
 import hashlib
 import json
 import os
 import re
+import shlex
 import shutil
 import signal
 import subprocess
@@ -634,6 +636,23 @@ GATE_ROLES = ("build", "test", "lint", "format", "types", "boundaries", "comment
 EXCEPTIONS = "comment-exceptions.json"
 COMMENT_CATEGORIES = ("license", "directive", "public-api", "external-constraint")
 EXCEPTION_KEYS = {"path", "text", "category", "reason", "evidence"}
+UPGRADE_COPY = (
+    "scripts/repo.py", "scripts/__init__.py", "scripts/README.md", "scripts/hooks/", "scripts/tests/",
+    "changes/README.md", "changes/_template/",
+    ".agents/skills/change-execution/", ".agents/skills/repository-quality/", ".agents/skills/sdlc-artifacts/",
+    ".agents/skills/template-upgrade/", ".agents/skills/verification-map/",
+    ".claude/skills/change-execution", ".claude/skills/repository-quality", ".claude/skills/sdlc-artifacts",
+    ".claude/skills/template-upgrade", ".claude/skills/verification-map",
+)
+UPGRADE_MERGE = (
+    "AGENTS.md", "REVIEW.md", "checks.json", ".claude/settings.json", ".github/workflows/repository.yml",
+    ".github/pull_request_template.md", ".gitignore", ".gitattributes",
+)
+MIGRATIONS = ".agents/skills/template-upgrade/references/migrations.md"
+OWNED = ".agents/skills/template-upgrade/references/owned-files.txt"
+TEMPLATE_KEYS = {"commit", "digest", "carried"}
+COMMIT_RE = re.compile(r"^[0-9a-f]{40}$")
+MISSING = ("missing", "missing")
 
 
 def product_paths(tracked: set) -> list[str]:
@@ -681,7 +700,105 @@ def validate_checks(config: dict) -> list[str]:
             problems.append(f"{where}.requires must be a list of executable names")
         if not isinstance(check.get("group", "core"), str):
             problems.append(f"{where}.group must be a string")
-    return problems + gate_problems(config.get("gates"), seen)
+    return problems + gate_problems(config.get("gates"), seen) + pin_problems(config.get("template"))
+
+
+def pin_problems(pin) -> list[str]:
+    if pin is None:
+        return []
+    if not isinstance(pin, dict) or not {"commit", "digest"} <= set(pin) <= TEMPLATE_KEYS:
+        return ["checks.json template must be an object with commit, digest and an optional carried list; take it from `repo.py upgrade`"]
+    problems = []
+    if not isinstance(pin["commit"], str) or not COMMIT_RE.match(pin["commit"]):
+        problems.append("template.commit must be a full 40-hex commit id")
+    if not isinstance(pin["digest"], str) or not DIGEST_RE.match(pin["digest"]):
+        problems.append("template.digest must be sha256:<64 hex>")
+    carried = pin.get("carried", [])
+    if not isinstance(carried, list) or not all(isinstance(c, str) for c in carried):
+        return problems + ["template.carried must be a list of paths"]
+    for path in carried:
+        if not in_copy_group(path, UPGRADE_COPY) or path == OWNED:
+            problems.append(f"template.carried: {path!r} is not a template-owned copy path")
+    if len(set(carried)) != len(carried):
+        problems.append("template.carried lists a path twice")
+    return problems
+
+
+def in_copy_group(path: str, entries) -> bool:
+    return any(path == e or (e.endswith("/") and path.startswith(e)) for e in entries)
+
+
+def index_entries(root: Path) -> dict:
+    out = {}
+    for record in git(root, "ls-files", "-s", "-z").split("\0"):
+        if record:
+            meta, rel = record.split("\t", 1)
+            mode, blob, _stage = meta.split()
+            out[rel] = (mode, blob)
+    return out
+
+
+def tree_entries(root: Path, commit: str, paths) -> dict:
+    out = {}
+    for record in git(root, "ls-tree", "-r", "-z", commit, "--", *paths).split("\0"):
+        if record:
+            meta, rel = record.split("\t", 1)
+            mode, _kind, blob = meta.split()
+            out[rel] = (mode, blob)
+    return out
+
+
+def pin_digest(entries: dict) -> str:
+    lines = "".join(f"{path}\0{mode}\0{blob}\n" for path, (mode, blob) in sorted(entries.items()))
+    return sha256_bytes(lines.encode())
+
+
+def owned_manifest(text: str) -> list[str]:
+    return [line for line in text.splitlines() if line]
+
+
+def drifted_files(ctx: Context, pin: dict, current: dict) -> list[str] | None:
+    log = git(ctx.root, "log", "--format=%H", "-S", pin["digest"], "--", "checks.json", check=False)
+    for commit in reversed((log or "").split()):
+        text = git(ctx.root, "show", f"{commit}:checks.json", check=False)
+        if text is None or pin["digest"] not in text:
+            continue
+        then = tree_entries(ctx.root, commit, list(current))
+        if pin_digest({rel: then.get(rel, MISSING) for rel in current}) != pin["digest"]:
+            return None
+        return sorted(rel for rel, entry in current.items() if then.get(rel, MISSING) != entry)
+    return None
+
+
+def template_findings(ctx: Context, config: dict) -> list[Reason]:
+    pin = config.get("template")
+    if pin is None:
+        return []
+    manifest = git(ctx.root, "show", f":{OWNED}", binary=True, check=False)
+    if manifest is None:
+        return [Reason("error", "checks-invalid", f"checks.json template is set but {OWNED} is not tracked; restore it from the pinned template")]
+    owned = owned_manifest(manifest.decode(errors="replace"))
+    outside = [rel for rel in owned if not in_copy_group(rel, UPGRADE_COPY)]
+    if outside:
+        return [Reason("error", "checks-invalid", f"{OWNED} lists paths outside the copy group: {', '.join(outside[:5])}")]
+    index = index_entries(ctx.root)
+    carried = pin.get("carried", [])
+    bad = [c for c in carried if c not in owned or c not in index]
+    if bad:
+        return [Reason("error", "checks-invalid", f"template.carried: {', '.join(bad)} must be tracked files listed in {OWNED}")]
+    current = {rel: index.get(rel, MISSING) for rel in owned if rel not in carried}
+    if pin_digest(current) == pin["digest"]:
+        return []
+    named = drifted_files(ctx, pin, current)
+    which = (
+        f": {', '.join(named)}" if named
+        else f"; list them with `python3 <template clone>/scripts/repo.py upgrade --template <template clone> --to {pin['commit']}`"
+    )
+    return [Reason(
+        "error", "template-drift",
+        f"template-owned files differ from the pinned template {pin['commit'][:12]}{which}. "
+        "Restore each file, or record a deliberate edit in template.carried (template-upgrade skill)",
+    )]
 
 
 def gate_problems(gates, registered: set) -> list[str]:
@@ -893,7 +1010,7 @@ def config_findings(ctx: Context) -> list[Reason]:
     problems = validate_checks(config)
     if problems:
         return [Reason("error", "checks-invalid", p) for p in problems]
-    findings = gate_findings(ctx, config)
+    findings = gate_findings(ctx, config) + template_findings(ctx, config)
     workflow = ctx.root / WORKFLOW
     if not workflow.is_file():
         return findings
@@ -1263,8 +1380,189 @@ def cmd_approve(args) -> int:
     return 0
 
 
+class Clone:
+    def __init__(self, path: Path):
+        if not (path / ".git").exists() or git(path, "rev-parse", "--is-inside-work-tree", check=False) is None:
+            raise Refusal(f"{path} is not a Git clone of the template")
+        if git(path, "rev-parse", "--is-shallow-repository").strip() == "true":
+            raise Refusal(f"{path} is a shallow clone; the report needs the template's full history")
+        self.path = path
+
+    def commit(self, ref: str) -> str:
+        out = git(self.path, "rev-parse", "--verify", "--quiet", ref + "^{commit}", check=False)
+        if not out:
+            raise Refusal(f"{ref!r} is not a commit in {self.path}")
+        return out.strip()
+
+    def lists(self, commit: str) -> tuple | None:
+        source = git(self.path, "show", f"{commit}:scripts/repo.py", check=False)
+        if source is None:
+            return None
+        found = {}
+        try:
+            for node in ast.parse(source).body:
+                if isinstance(node, ast.Assign) and len(node.targets) == 1 and isinstance(node.targets[0], ast.Name):
+                    if node.targets[0].id in ("UPGRADE_COPY", "UPGRADE_MERGE"):
+                        found[node.targets[0].id] = tuple(ast.literal_eval(node.value))
+        except (SyntaxError, ValueError) as exc:
+            raise Refusal(f"cannot read the upgrade lists of {commit[:12]}: {exc}")
+        if set(found) != {"UPGRADE_COPY", "UPGRADE_MERGE"} or not all(isinstance(e, str) for v in found.values() for e in v):
+            return None
+        return found["UPGRADE_COPY"], found["UPGRADE_MERGE"]
+
+    def owned(self, commit: str, copy_entries) -> dict:
+        manifest = git(self.path, "show", f"{commit}:{OWNED}", check=False)
+        if manifest is not None:
+            paths = owned_manifest(manifest)
+            outside = [rel for rel in paths if not in_copy_group(rel, copy_entries)]
+            if outside:
+                raise Refusal(f"{OWNED} at {commit[:12]} lists paths outside the copy group: {', '.join(outside[:5])}")
+            entries = tree_entries(self.path, commit, paths)
+            return {rel: entries.get(rel, MISSING) for rel in paths}
+        return {rel: e for rel, e in tree_entries(self.path, commit, copy_entries).items() if in_copy_group(rel, copy_entries)}
+
+    def ancestor(self, older: str, newer: str) -> bool:
+        return subprocess.run(["git", "merge-base", "--is-ancestor", older, newer], cwd=self.path, capture_output=True).returncode == 0
+
+
+def base_candidates(clone: Clone, target: str, index: dict, copy_entries) -> list[tuple[str, int, int]]:
+    scored = []
+    for commit in git(clone.path, "rev-list", "--reverse", "--topo-order", target).split():
+        owned = {rel: e for rel, e in tree_entries(clone.path, commit, copy_entries).items() if in_copy_group(rel, copy_entries)}
+        hit = sum(1 for rel, entry in owned.items() if index.get(rel) == entry)
+        scored.append((commit, hit, len(owned)))
+    best = max((hit for _, hit, _ in scored), default=0)
+    return [c for c in scored if c[1] == best and best > 0]
+
+
+def migration_ids(text: str) -> list[str]:
+    return re.findall(r"(?m)^## ([a-z0-9][a-z0-9-]*[a-z0-9])\s*$", text)
+
+
+def migrations_between(clone: Clone, base: str, target: str) -> list[tuple[str, str]]:
+    text = git(clone.path, "show", f"{target}:{MIGRATIONS}", check=False)
+    if text is None:
+        return []
+    order = git(clone.path, "rev-list", "--reverse", "--topo-order", f"{base}..{target}").split()
+    picked = []
+    for cid in migration_ids(text):
+        added = git(clone.path, "log", "--diff-filter=A", "--format=%H", target, "--", f"{CHANGES}/{cid}/change.json").split()
+        if added and added[-1] in order:
+            picked.append((order.index(added[-1]), cid, added[-1]))
+    return [(cid, commit) for _, cid, commit in sorted(picked)]
+
+
+def upgrade_pin(config: dict) -> tuple[dict | None, set]:
+    if "problem" in config:
+        raise Refusal(config["problem"])
+    pin = config.get("template")
+    problems = pin_problems(pin)
+    if problems:
+        raise Refusal("checks.json template: " + "; ".join(problems))
+    return pin, set((pin or {}).get("carried", []))
+
+
+def kind(entry) -> str:
+    return {"120000": " (symlink)", "100755": " (executable)"}.get(entry[0], "") if entry else ""
+
+
+def cmd_upgrade(args) -> int:
+    root = repo_root()
+    clone = Clone(Path(args.template).resolve())
+    target = clone.commit(args.to)
+    lists = clone.lists(target)
+    if lists is None or git(clone.path, "show", f"{target}:{OWNED}", check=False) is None:
+        raise Refusal(f"{args.to} predates upgrade support (no UPGRADE_COPY/UPGRADE_MERGE or {OWNED})")
+    copy_entries, merge_entries = lists
+    pin, carried = upgrade_pin(load_config(root))
+    index = index_entries(root)
+    claimed = args.from_ or (pin or {}).get("commit")
+    if not claimed:
+        found = base_candidates(clone, target, index, copy_entries)
+        print("no base: pass --from <commit>, or record checks.json template. Candidates with the most matching copy files, oldest first:")
+        for commit, hit, total in found[:20]:
+            print(f"  {commit}  {hit} of {total} match")
+        if len(found) > 20:
+            print(f"  ... {len(found) - 20} more with the same count")
+        return 1
+    base = clone.commit(claimed)
+    if not clone.ancestor(base, target):
+        raise Refusal(f"base {base[:12]} is not an ancestor of target {target[:12]}")
+    base_lists = clone.lists(base)
+    base_entries = base_lists[0] if base_lists else copy_entries
+    owned_base = clone.owned(base, base_entries)
+    owned_target = clone.owned(target, copy_entries)
+    stray = sorted(c for c in carried if c not in owned_base)
+    if stray:
+        raise Refusal(f"template.carried names files the base template does not own: {', '.join(stray)}")
+    q = shlex.quote
+    hit = sum(1 for rel, entry in owned_base.items() if index.get(rel) == entry)
+    tags = git(clone.path, "tag", "--points-at", target).split()
+    print(f"target: {target}{' (' + ', '.join(tags) + ')' if tags else ''}")
+    print(f"base:   {base}  {hit} of {len(owned_base)} template-owned copy files match the adopter")
+    section("drift", [
+        f"{rel}: {'missing' if rel not in index else 'differs from the base'}"
+        for rel, entry in sorted(owned_base.items())
+        if rel not in carried and index.get(rel) != entry and index.get(rel) != owned_target.get(rel)
+    ])
+    recipe = "git merge-file -p {f} <(git -C {c} show {b}:{f}) <(git -C {c} show {t}:{f})"
+    carried_lines = []
+    for rel in sorted(carried):
+        if rel not in owned_target:
+            carried_lines.append(f"{rel}: removed upstream; delete it, or keep it as a local file outside the pin")
+        elif owned_base[rel] != owned_target[rel]:
+            carried_lines.append(f"{rel}: {recipe.format(f=q(rel), c=q(str(clone.path)), b=base, t=target)}")
+    section("carried", carried_lines)
+    copy_lines = []
+    for rel in sorted(set(owned_base) | set(owned_target)):
+        before, after = owned_base.get(rel), owned_target.get(rel)
+        if rel in carried or before == after or index.get(rel) == after:
+            continue
+        if after is None:
+            copy_lines.append(f"removed  {rel}")
+        elif before is None:
+            clash = rel in index or os.path.lexists(root / rel)
+            copy_lines.append(f"added    {rel}{kind(after)}{' (collides with an existing adopter file; resolve it first)' if clash else ''}")
+        else:
+            copy_lines.append(f"changed  {rel}{kind(after)}{' (mode ' + before[0] + ' -> ' + after[0] + ')' if before[0] != after[0] else ''}")
+    section("copy", copy_lines)
+    merge_base = tree_entries(clone.path, base, merge_entries)
+    merge_target = tree_entries(clone.path, target, merge_entries)
+    merge_lines = []
+    for rel in merge_entries:
+        before, after = merge_base.get(rel), merge_target.get(rel)
+        if before == after:
+            continue
+        if after is None:
+            merge_lines.append(f"{rel}: removed upstream; remove the template's part of it")
+        elif before is None or rel not in index:
+            merge_lines.append(f"{rel}: new to this repository; start from git -C {q(str(clone.path))} show {target}:{q(rel)}")
+        else:
+            merge_lines.append(f"{rel}: git -C {q(str(clone.path))} diff {base} {target} -- {q(rel)}")
+            merge_lines.append(f"    {recipe.format(f=q(rel), c=q(str(clone.path)), b=base, t=target)}")
+    section("merge", merge_lines)
+    section("local", sorted(
+        rel for rel in index
+        if in_copy_group(rel, copy_entries + base_entries) and rel not in owned_base and rel not in owned_target
+    ))
+    section("migrations", [f"{cid} ({commit[:12]}): see {MIGRATIONS} at the target" for cid, commit in migrations_between(clone, base, target)])
+    kept = sorted(c for c in carried if c in owned_target)
+    new_pin = {"commit": target, "digest": pin_digest({rel: e for rel, e in owned_target.items() if rel not in kept})}
+    if kept:
+        new_pin["carried"] = kept
+    print("pin: record in checks.json once the upgrade is staged")
+    print("  \"template\": " + json.dumps(new_pin))
+    return 0
+
+
+def section(name: str, lines: list[str]) -> None:
+    print(f"{name}: {len(lines) or 'none'}")
+    for line in lines:
+        print(f"  {line}")
+
+
 def build_parser() -> argparse.ArgumentParser:
-    parser = argparse.ArgumentParser(prog="repo.py", description="Repository control plane: `status`, `verify`, `new` and `approve`.")
+    parser = argparse.ArgumentParser(prog="repo.py", description="Repository control plane: `status`, `verify`, `new`, `approve` and `upgrade`.")
     sub = parser.add_subparsers(dest="command", required=True)
 
     def common(p):
@@ -1300,6 +1598,11 @@ def build_parser() -> argparse.ArgumentParser:
     approve.add_argument("artifact", help=f"one of {', '.join(CHAIN)}")
     approve.add_argument("--by", required=True, help="the human owner who reviewed exactly these bytes")
     approve.add_argument("--note", help="free-text note stored with the claim")
+    upgrade = sub.add_parser("upgrade", help="report what upgrading to a template commit changes (read-only; run the target's repo.py)")
+    upgrade.set_defaults(func=cmd_upgrade)
+    upgrade.add_argument("--template", required=True, metavar="CLONE", help="path to a full clone of the template")
+    upgrade.add_argument("--to", required=True, metavar="REF", help="target template commit or tag")
+    upgrade.add_argument("--from", dest="from_", metavar="COMMIT", help="base template commit (default: checks.json template.commit)")
     return parser
 
 
