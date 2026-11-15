@@ -1,0 +1,16 @@
+{
+  "schema": 1,
+  "id": "upgrade-adopter-tests",
+  "kind": "repository",
+  "title": "Run the template's own upgrade invariants only in the template, not in adopters",
+  "base": {
+    "ref": "main",
+    "commit": "8e3ce0d7a9a67f943bda0c19253ece87d998b0c6"
+  },
+  "baseline": {},
+  "write_scope": [
+    "scripts/tests/test_upgrade.py",
+    ".agents/skills/template-upgrade/SKILL.md"
+  ],
+  "approvals": []
+}
