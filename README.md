@@ -20,7 +20,7 @@ The root `intent.md` and `spec.md` are the durable product baseline. A new produ
 
 1. Create a new repository from this GitHub template and clone it.
 2. Configure the repository once, as `docs/host-setup.md` describes: add it to the GitHub App's installation, so the App account can open pull requests, your account reviews and merges them, and `main` is protected.
-3. Create the `product-init` packet: `python3 scripts/repo.py new <id> --kind product-init --title "<summary>"`. It copies the root `intent.md` and `spec.md` into the packet and adds them to `write_scope`. Pass `--scope` for every other path the change will touch, including `checks.json`, before the plan is approved, because the approval binds the scope.
+3. Create the `product-init` packet: `python3 scripts/repo.py new <id> --kind product-init --title "<summary>"`. It copies the root `intent.md` and `spec.md` into the packet and adds them to `write_scope`. Pass `--scope` for every other path the change will touch, including `checks.json`, before the plan is approved, because the approval binds the scope. The spec decides the folder structure (default: feature-based vertical slices) and the plan decides every `checks.json` gate.
 4. Ask an agent to interrogate the idea until the intent is concrete, then approve `intent.md` yourself: `python3 scripts/repo.py approve <id> intent.md --by <you>` records a digest-bound claim for exactly the bytes you reviewed. The agent commits and pushes it.
 5. Draft and approve `spec.md`, then the change's `plan.md`, in that order.
 6. Implement only when `python3 scripts/repo.py status --change <id>` reports `readiness=ready`.
@@ -35,7 +35,8 @@ See `.agents/skills/sdlc-artifacts/SKILL.md` for the workflow.
 - `intent.md`, `spec.md`: durable product baseline (why, and what must be true).
 - `changes/`: one packet per change, with its own plan; `changes/README.md` defines the model.
 - `scripts/repo.py`: `status` computes change state and enforces gates; `verify` runs registered checks with routing and evidence; `new` and `approve` write packet records mechanically. Standard-library Python only.
-- `checks.json`: the check registry (exact argv, cwd, timeout, routed paths, required tools, group). `status` warns when product files are tracked but only the template's own check is registered.
+- `checks.json`: the check registry (exact argv, cwd, timeout, routed paths, required tools, group). Its `gates` decide each of `build`, `test`, `lint`, `format`, `types`, `boundaries` and `comments`: a registered check id or `{"none": "<reason>"}`. `status` fails when a product path is tracked and a gate is undecided.
+- `comment-exceptions.json` (optional): the only place a product comment is allowed, by a closed category; `status` validates it and fails on stale entries.
 - `scripts/hooks/guard.py`: the agent-neutral in-session guard; see `scripts/hooks/README.md`. `.claude/settings.json` is the thin Claude Code adapter, and `status` checks that it points at tracked scripts.
 - `.agents/skills/`: on-demand shared agent procedures. `.claude/skills/` holds thin symlink adapters.
 - `docs/`: supporting, reference, and historical documentation only.
@@ -69,7 +70,7 @@ Claude Code discovers these skills through thin `.claude/skills/<name>` symlinks
 
 ## Project initialization
 
-When a project chooses its application stack, establish the repository-native build, test, lint, format-check, and type-check commands. Register each as a check in `checks.json`, and give checks that need a new toolchain their own group and CI job. Then do the one-time GitHub setup in `docs/host-setup.md`; settings such as branch protection are never inherited from a GitHub template.
+Initialization decides the codebase before code lands. The `product-init` spec decides the folder structure, the dependency direction and where a new feature goes; when you have no preference the agent recommends feature-based vertical slices, and it researches alternatives when you ask. When the stack is chosen, establish the repository-native build, test, lint, format-check, type-check, boundary and comment checks. Register each in `checks.json`, decide every role in its `gates`, and give checks that need a new toolchain their own group and CI job. `repo.py status` fails once a product path is tracked and a gate is undecided. Comments are off by default; see the `repository-quality` skill. Then do the one-time GitHub setup in `docs/host-setup.md`; settings such as branch protection are never inherited from a GitHub template.
 
 ## Source material
 

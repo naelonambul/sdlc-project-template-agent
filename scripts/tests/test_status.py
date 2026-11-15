@@ -615,38 +615,166 @@ class Surfaces(RepoCase):
         self.assertIn("hook-adapter-missing", self.surface_codes(result))
 
 
-class RegisteredChecks(RepoCase):
-    def configure(self):
-        check = {"id": "control-plane", "argv": ["true"], "cwd": ".", "timeout_seconds": 5, "paths": ["scripts/**"]}
-        self.write("checks.json", json.dumps({"schema": 1, "checks": [check]}))
+CHECK = {"argv": ["true"], "cwd": ".", "timeout_seconds": 5, "paths": ["**"]}
 
-    def warnings(self):
-        return [s for s in self.status()["surface"] if s["code"] == "checks-unregistered"]
 
-    def test_template_only_tree_does_not_warn(self):
-        self.configure()
+class Gates(RepoCase):
+    def surface(self, result, code):
+        return [s for s in result["surface"] if s["code"] == code]
+
+    def product(self):
+        self.write("src/app.py", "print('hi')\n")
+
+    def test_template_only_tree_needs_no_gates(self):
+        self.write_checks([{"id": "control-plane", **CHECK}], gates=None)
         self.write("scripts/repo.py", "")
         self.write("docs/notes.md", "")
         self.commit("template")
-        self.assertEqual(self.warnings(), [])
+        result = self.status()
+        self.assertTrue(result["ok"], result["failures"])
+        self.assertEqual(self.surface(result, "gates-undecided"), [])
 
-    def test_product_files_with_only_control_plane_warn(self):
-        self.configure()
-        self.write("src/app.py", "print('hi')\n")
-        self.commit("product")
-        warnings = self.warnings()
-        self.assertEqual(len(warnings), 1)
-        self.assertIn("'src/app.py'", warnings[0]["message"])
+    def test_template_only_tree_needs_no_checks_json(self):
+        (self.root / "checks.json").unlink()
+        self.commit("no registry")
         self.assertTrue(self.status()["ok"])
 
-    def test_registered_product_check_silences_warning(self):
-        self.configure()
-        config = json.loads(self.read("checks.json"))
-        config["checks"].append({"id": "unit", "argv": ["true"], "cwd": ".", "timeout_seconds": 5, "paths": ["src/**"]})
-        self.write("checks.json", json.dumps(config))
-        self.write("src/app.py", "")
+    def test_product_path_without_checks_json_fails(self):
+        (self.root / "checks.json").unlink()
+        self.product()
         self.commit("product")
-        self.assertEqual(self.warnings(), [])
+        result = self.status()
+        self.assertFailed(result, "checks.json")
+        self.assertEqual(len(self.surface(result, "checks-missing")), 1)
+
+    def test_product_path_without_gates_names_every_role(self):
+        self.write_checks(gates=None)
+        self.product()
+        self.commit("product")
+        result = self.status()
+        self.assertFailed(result, "'src/app.py'")
+        [finding] = self.surface(result, "gates-undecided")
+        for role in ("build", "test", "lint", "format", "types", "boundaries", "comments"):
+            self.assertIn(role, finding["message"])
+        self.assertIn("repository-quality", finding["message"])
+
+    def test_a_missing_role_is_named(self):
+        gates = {r: {"none": "n/a"} for r in ("build", "test", "lint", "format", "types", "boundaries")}
+        self.write_checks(gates=gates)
+        self.product()
+        self.commit("product")
+        result = self.status()
+        [finding] = self.surface(result, "gates-undecided")
+        self.assertIn("comments", finding["message"])
+        self.assertNotIn("boundaries", finding["message"])
+        self.assertEqual(result["exit"], 1)
+
+    def test_every_role_as_a_registered_check_passes(self):
+        roles = ("build", "test", "lint", "format", "types", "boundaries", "comments")
+        self.write_checks([{"id": f"app-{r}", **CHECK} for r in roles], gates={r: f"app-{r}" for r in roles})
+        self.product()
+        self.commit("product")
+        result = self.status()
+        self.assertTrue(result["ok"], result["failures"])
+
+    def test_every_role_declared_none_passes(self):
+        self.product()
+        self.commit("product")
+        result = self.status()
+        self.assertTrue(result["ok"], result["failures"])
+        self.assertEqual(self.surface(result, "gates-undecided"), [])
+
+    def test_the_exception_register_is_not_a_product_path(self):
+        self.write_checks(gates=None)
+        self.write("comment-exceptions.json", json.dumps({"schema": 1, "exceptions": []}))
+        self.commit("register")
+        self.assertTrue(self.status()["ok"])
+
+    def invalid(self, gates, fragment, checks=()):
+        self.write_checks(checks, gates=gates)
+        self.commit("bad gates")
+        self.assertFailed(self.status(), fragment)
+        proc = self.run_repo("verify", "--full")
+        self.assertNotEqual(proc.returncode, 0)
+        self.assertIn(fragment, proc.stdout + proc.stderr)
+
+    def test_an_unknown_role_is_invalid(self):
+        self.invalid({"docs": {"none": "x"}}, "unknown gate role")
+
+    def test_an_unregistered_check_id_is_invalid(self):
+        self.invalid({"lint": "app-lint"}, "not a registered check")
+
+    def test_an_empty_none_reason_is_invalid(self):
+        self.invalid({"lint": {"none": " "}}, "gates.lint")
+
+    def test_a_none_with_extra_keys_is_invalid(self):
+        self.invalid({"lint": {"none": "x", "later": True}}, "gates.lint")
+
+    def test_gates_must_be_an_object(self):
+        self.invalid(["lint"], "gates must be an object")
+
+
+class CommentExceptions(RepoCase):
+    SOURCE = "#!/usr/bin/env python3\n  // SPDX-License-Identifier: MIT  \nx = 1\n"
+
+    def register(self, *entries, raw=None):
+        self.write("src/app.py", self.SOURCE)
+        self.write("comment-exceptions.json", raw if raw is not None else json.dumps({"schema": 1, "exceptions": list(entries)}))
+        self.commit("register")
+        return self.status()
+
+    def entry(self, **over):
+        return {"path": "src/app.py", "text": "// SPDX-License-Identifier: MIT", "category": "license", "reason": "the license requires it", **over}
+
+    def invalid(self, fragment, *entries, raw=None):
+        result = self.register(*entries, raw=raw)
+        self.assertFailed(result, fragment)
+        self.assertTrue(any(s["code"] == "comment-exceptions-invalid" for s in result["surface"]), result["surface"])
+
+    def test_no_register_is_fine(self):
+        self.write("src/app.py", self.SOURCE)
+        self.commit("product")
+        self.assertTrue(self.status()["ok"])
+
+    def test_a_valid_entry_of_each_category_passes(self):
+        self.write("src/b.py", "x = 1\n")
+        result = self.register(
+            self.entry(),
+            self.entry(text="#!/usr/bin/env python3", category="directive", reason="the kernel reads it"),
+            self.entry(text="x = 1", category="public-api", reason="documents the published constant"),
+            self.entry(path="src/b.py", text="x = 1", category="external-constraint", reason="the vendor fixes it", evidence="https://example.invalid/spec"),
+        )
+        self.assertTrue(result["ok"], result["failures"])
+
+    def test_matching_ignores_only_surrounding_whitespace(self):
+        self.invalid("not a line of", self.entry(text="// SPDX-License-Identifier:  MIT"))
+
+    def test_invalid_json_fails(self):
+        self.invalid("comment-exceptions.json", raw="{bad")
+
+    def test_a_wrong_schema_fails(self):
+        self.invalid("comment-exceptions.json", raw=json.dumps({"schema": 2, "exceptions": []}))
+
+    def test_an_unknown_category_fails(self):
+        self.invalid("category", self.entry(category="workaround"))
+
+    def test_an_empty_reason_fails(self):
+        self.invalid("reason", self.entry(reason="  "))
+
+    def test_an_external_constraint_needs_evidence(self):
+        self.invalid("evidence", self.entry(category="external-constraint"))
+
+    def test_an_untracked_path_fails(self):
+        self.invalid("not tracked", self.entry(path="src/missing.py"))
+
+    def test_a_stale_entry_fails(self):
+        self.invalid("not a line of", self.entry(text="// gone"))
+
+    def test_a_duplicate_fails(self):
+        self.invalid("duplicate", self.entry(), self.entry(reason="again"))
+
+    def test_unknown_keys_fail(self):
+        self.invalid("unknown keys", self.entry(owner="me"))
 
 
 class CheckWiring(RepoCase):
