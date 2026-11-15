@@ -68,6 +68,8 @@ The `workspace-write` sandbox keeps `.git` read-only, so Codex cannot commit in 
 | 2026-10-30 | Claude Code CLI 2.1.314 | shortened `sdlc-artifacts` Close section; probes run non-interactively in a scratch copy | yes | 4/4 core skills |
 | 2026-10-30 | Claude Code CLI 2.1.314 | changed `sdlc-artifacts` and `repository-quality`; probes run non-interactively in a scratch copy | yes | 4/4 core skills |
 | 2026-10-30 | Codex CLI 0.156.1 | same scratch copy, `codex exec --sandbox read-only` | yes | 4/4 core skills |
+| 2026-11-16 | Claude Code CLI 2.1.325 | `guard.py` without comments or docstrings (`scripts-comment-free`); probes run non-interactively in a scratch copy | yes (no, with a shadowing `CLAUDE.md`) | 4/4 core skills; guard denied a live `Write` to root `intent.md` |
+| 2026-11-16 | Codex CLI 0.169.0 | same scratch copy, `codex exec --sandbox read-only` | yes | 4/4 core skills |
 | 2026-10-31 | Claude Code CLI 2.1.314 | changed `AGENTS.md` and skills; no `CLAUDE.md`, adapters present; probes run non-interactively in a scratch copy | yes (no, with a shadowing `CLAUDE.md`) | 4/4 core skills |
 | 2026-10-31 | Codex CLI 0.166.0 | same scratch copy, `codex exec --skip-git-repo-check --sandbox read-only` | yes | 4/4 core skills |
 | 2026-11-01 | Claude Code CLI 2.1.316 | changed `sdlc-artifacts` and `repository-quality`; no `CLAUDE.md`, adapters present; probes run non-interactively in a scratch copy | yes (no, with a shadowing `CLAUDE.md`) | 4/4 core skills |
