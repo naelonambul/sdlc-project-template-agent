@@ -1,11 +1,3 @@
-#!/usr/bin/env python3
-"""Repository control plane: `status`, `verify`, `new` and `approve`.
-
-Standard library only. `status` computes change lifecycle state from the
-repository's facts and authored claims; nothing it reports is stored as a
-writable label. See `changes/README.md` for the change model.
-"""
-
 from __future__ import annotations
 
 import argparse
@@ -32,7 +24,6 @@ UNESTABLISHED = "<!-- sdlc:baseline-unestablished -->"
 ID_RE = re.compile(r"^[a-z0-9](?:[a-z0-9-]{0,62}[a-z0-9])?$")
 DIGEST_RE = re.compile(r"^sha256:[0-9a-f]{64}$")
 
-# kind -> (required change-local artifacts, optional change-local artifacts)
 KINDS = {
     "product-init": ({"intent.md", "spec.md", "plan.md"}, set()),
     "intent": ({"intent.md", "plan.md"}, {"spec.md"}),
@@ -40,8 +31,6 @@ KINDS = {
     "implementation": ({"plan.md"}, set()),
     "incident": ({"plan.md"}, {"spec.md"}),
     "architecture": ({"plan.md"}, {"spec.md"}),
-    # Changes to the repository's own process/tooling. They inherit no product
-    # baseline and may not modify an established root intent.md or spec.md.
     "repository": ({"plan.md"}, set()),
 }
 CHANGE_KEYS = {"schema", "id", "kind", "title", "base", "baseline", "write_scope", "approvals"}
@@ -62,7 +51,6 @@ def git(root: Path, *args: str, binary: bool = False, check: bool = True):
 
 
 def git_paths(root: Path, *args: str) -> list[str]:
-    """Paths from a git command that separates them with NUL."""
     return list(filter(None, git(root, *args).split("\0")))
 
 
@@ -76,11 +64,6 @@ def sha256_bytes(data: bytes) -> str:
 
 def file_digest(path: Path) -> str | None:
     return sha256_bytes(path.read_bytes()) if path.is_file() else None
-
-
-# --------------------------------------------------------------------------
-# write-scope patterns
-# --------------------------------------------------------------------------
 
 
 def scope_pattern_error(pattern) -> str | None:
@@ -116,11 +99,6 @@ def matches_any(path: str, patterns) -> bool:
     return any(glob_regex(p).match(path) for p in patterns)
 
 
-# --------------------------------------------------------------------------
-# repository context
-# --------------------------------------------------------------------------
-
-
 @dataclass
 class Context:
     root: Path
@@ -134,7 +112,6 @@ class Context:
 
     @property
     def merged_ids(self) -> set[str]:
-        """Packets whose change.json is on the baseline branch's tip: their pull request merged."""
         if self._merged_ids is None:
             self._merged_ids = set()
             if self.baseline_ref is not None:
@@ -177,14 +154,9 @@ def baseline_branch(root: Path) -> str:
     return load_config(root).get("baseline_branch", "main")
 
 
-# --------------------------------------------------------------------------
-# change evaluation
-# --------------------------------------------------------------------------
-
-
 @dataclass
 class Reason:
-    level: str  # "error" blocks outright; "pending" means the lifecycle is incomplete
+    level: str
     code: str
     message: str
 
@@ -276,17 +248,14 @@ def validate_change(st: ChangeStatus, data) -> bool:
 
 
 def scope_digest(scope: list) -> str:
-    """Digest of the write_scope patterns; their order carries no meaning."""
     return sha256_bytes(json.dumps(sorted(scope), separators=(",", ":")).encode())
 
 
 def is_placeholder(kind: str, packet_dir: Path, artifact: str) -> bool:
-    """A product-init copy of a root artifact that was never drafted."""
     return kind == "product-init" and artifact in BASELINE and UNESTABLISHED.encode() in (packet_dir / artifact).read_bytes()
 
 
 def check_approvals(st: ChangeStatus, data: dict, packet_dir: Path, chain: list) -> tuple[dict, bool, bool]:
-    """Return (approval time by current artifact, any stale claim, plan claim without a scope binding)."""
     approved_at = {}
     stale_approval = False
     unbound_scope = False
@@ -360,8 +329,6 @@ def evaluate_change(ctx: Context, change_id: str) -> ChangeStatus:
     st.change = data
     st.kind = data["kind"]
     if change_id in ctx.merged_ids:
-        # Its pull request merged: Git and the pull request are the record. A later change
-        # that edits it needs the path in its own approved write_scope (check_scope).
         st.stage = "merged"
         st.add("pending", "merged", f"merged on {ctx.baseline_branch!r}; record follow-up work as a new change")
         return st
@@ -382,7 +349,6 @@ def evaluate_change(ctx: Context, change_id: str) -> ChangeStatus:
         }
         for name in chain
     }
-    # A local claim is never provider-verified; see docs in changes/README.md.
     st.approval = "unverified" if chain and all(n in approved_at for n in chain) else "none"
 
     check_order(st, chain, approved_at)
@@ -410,7 +376,6 @@ def root_state(ctx: Context, name: str):
 
 
 def baseline_state(ctx: Context, name: str):
-    """The baseline branch's copy of a root artifact; the change itself replaces its branch's copy."""
     data = git(ctx.root, "show", f"{ctx.baseline_ref}:{name}", binary=True, check=False) if ctx.baseline_ref else None
     if data is None:
         return root_state(ctx, name)
@@ -433,7 +398,7 @@ def check_baseline(ctx: Context, st: ChangeStatus, data: dict, present: set) -> 
         if local is not None:
             digest, established = baseline_state(ctx, name)
         if local is not None and digest == local:
-            continue  # the change's own accepted artifact has been merged into the root baseline
+            continue
         if st.kind == "product-init":
             if established:
                 st.add("error", "baseline-established", f"root {name} is already established; use another change kind")
@@ -459,11 +424,6 @@ def change_ids(root: Path) -> list[str]:
     if not base.is_dir():
         return []
     return sorted(p.name for p in base.iterdir() if p.is_dir() and p.name != TEMPLATE_PACKET)
-
-
-# --------------------------------------------------------------------------
-# active change identity and diff
-# --------------------------------------------------------------------------
 
 
 def parse_pr_change_ids(body: str) -> list[str]:
@@ -528,7 +488,6 @@ def resolve_active(ctx: Context, explicit: str | None, pr_body: str | None, bran
         active.id = next(iter(sources.values()))
         active.source = " + ".join(sources)
     elif not active.errors:
-        # convenience inference only: exactly one touched packet
         base, _ = resolve_base(ctx, None)
         touched = set()
         if base:
@@ -546,7 +505,6 @@ def resolve_active(ctx: Context, explicit: str | None, pr_body: str | None, bran
 
 
 def check_scope(ctx: Context, st: ChangeStatus) -> list[str]:
-    """Return changed paths; record blocking reasons on st."""
     base, how = resolve_base(ctx, st.change)
     if ctx.shallow and not ctx.base:
         st.add("error", "diff-base", "shallow history cannot establish the change base; fetch full history")
@@ -561,10 +519,6 @@ def check_scope(ctx: Context, st: ChangeStatus) -> list[str]:
     if outside:
         st.add("error", "out-of-scope", f"changed paths outside declared write_scope ({how}): {outside}")
     if st.kind == "repository":
-        # Placeholder (unestablished) baselines carry no product truth and may be
-        # reshaped by process changes; established baselines change only through
-        # product change kinds. The base decides, so a change cannot exempt itself
-        # by adding the marker.
         touched = [p for p in paths if p in BASELINE and established_at(ctx, base, p)]
         if touched:
             st.add("error", "out-of-scope", f"repository changes may not modify established root {touched}")
@@ -574,11 +528,6 @@ def check_scope(ctx: Context, st: ChangeStatus) -> list[str]:
     if st.errors:
         st.readiness = "blocked"
     return paths
-
-
-# --------------------------------------------------------------------------
-# agent instruction / skill adapter checks
-# --------------------------------------------------------------------------
 
 
 def surface_findings(ctx: Context) -> list[Reason]:
@@ -644,7 +593,6 @@ HOOK_DIR = "scripts/hooks"
 
 
 def hook_commands(settings) -> list[str]:
-    """Every hook command string configured in a Claude Code settings object."""
     out = []
     for event in (settings.get("hooks") or {}).values() if isinstance(settings, dict) else []:
         for matcher in event if isinstance(event, list) else []:
@@ -655,7 +603,6 @@ def hook_commands(settings) -> list[str]:
 
 
 def hook_findings(root: Path, tracked: set) -> list[Reason]:
-    """A hook adapter must point at tracked scripts under scripts/hooks/; a shipped guard wants an adapter."""
     findings = []
     scripts = sorted(p for p in tracked if p.startswith(HOOK_DIR + "/") and p.endswith(".py"))
     if HOOK_SETTINGS not in tracked:
@@ -678,7 +625,6 @@ def hook_findings(root: Path, tracked: set) -> list[Reason]:
     return findings
 
 
-# Paths the template itself owns. Anything else tracked is product material.
 TEMPLATE_PATHS = (
     "scripts/", "changes/", ".agents/", ".claude/", ".github/", "docs/", ".evidence/",
     "AGENTS.md", "README.md", "REVIEW.md", "LICENSE", "intent.md", "spec.md", "checks.json",
@@ -690,11 +636,6 @@ TEMPLATE_CHECKS = {"control-plane"}
 def product_paths(tracked: set) -> list[str]:
     return sorted(p for p in tracked if not any(p == t or (t.endswith("/") and p.startswith(t)) for t in TEMPLATE_PATHS))
 
-
-
-# --------------------------------------------------------------------------
-# verify: registered checks
-# --------------------------------------------------------------------------
 
 CHECK_KEYS = {"id", "group", "argv", "cwd", "timeout_seconds", "paths", "requires"}
 
@@ -741,7 +682,6 @@ def validate_checks(config: dict) -> list[str]:
 
 
 def route(ctx: Context, checks: list[dict], full: bool) -> tuple[dict, dict]:
-    """Return ({check id: (selected, reason)}, routing facts)."""
     if full:
         return {c["id"]: (True, "full suite requested") for c in checks}, {"mode": "full"}
     base, how = resolve_base(ctx, None)
@@ -824,7 +764,6 @@ def run_check(ctx: Context, check: dict, log_path: Path) -> dict:
 
 
 def candidate_digest(root: Path, _cid: str | None = None) -> str:
-    """Digest of the candidate's paths, modes and content, leaving out evidence."""
     gitlinks = {}
     for entry in git_paths(root, "ls-files", "-s", "-z"):
         meta, rel = entry.split("\t", 1)
@@ -858,7 +797,6 @@ WORKFLOW = Path(".github/workflows/repository.yml")
 
 
 def config_findings(ctx: Context) -> list[Reason]:
-    """checks.json must be valid, and CI must run every check group, through `repo.py verify --group` or directly."""
     config = load_config(ctx.root)
     if not config:
         return []
@@ -882,7 +820,6 @@ def config_findings(ctx: Context) -> list[Reason]:
     declared = {c.get("group", "core") for c in config["checks"]}
     uncommented = re.sub(r"(?m)(^|\s)#.*$", "", workflow.read_text())
     through_verify = set(re.findall(r"repo\.py verify\b[^\n]*?--group[ =](\S+)", uncommented))
-    # A group is also wired when CI runs every one of its checks directly, outside repo.py.
     steps = {m.strip() for m in re.findall(r"(?m)^\s*(?:-\s+)?run:[ \t]*(\S.*)$", uncommented)}
     direct = {
         group for group in declared
@@ -942,9 +879,6 @@ def cmd_verify(args) -> int:
         "change": active.id,
         "groups": sorted(groups) or "all",
         "routing": routing,
-        # Complete only when no check was left unrun. A group-filtered run is a
-        # partial execution unit, never a full verification on its own. Files that
-        # changed during the run were not the files the checks saw.
         "complete": stable and not any(r["status"] == "not-run" for r in results),
         "checks": results,
     }
@@ -970,10 +904,6 @@ def cmd_verify(args) -> int:
     bad = [r for r in results if r["status"] in ("failed", "blocked")]
     return 1 if bad or not stable else 0
 
-# --------------------------------------------------------------------------
-# commands
-# --------------------------------------------------------------------------
-
 
 def make_context(args) -> Context:
     root = repo_root()
@@ -993,11 +923,6 @@ def read_pr_body(args) -> str | None:
 
 
 def pull_request_failures(ctx: Context, st: ChangeStatus) -> list[str]:
-    """The final gate: a pull request merges its accepted intent/spec copies into the root.
-
-    Readiness and scope are already failures of the active change; merging the pull
-    request is what closes it.
-    """
     failures = []
     packet_dir = ctx.root / CHANGES / st.id
     for name in BASELINE:
@@ -1026,7 +951,6 @@ def compute_status(ctx: Context, args) -> dict:
         if cid == active.id:
             failures += [f"{cid}: {r.message}" for r in errors]
         else:
-            # Other packets fail the gate only on invalid records, not on in-flight lifecycle state.
             integrity = ("invalid-change", "scope-path-escape")
             failures += [f"{cid}: {r.message}" for r in errors if r.code in integrity]
     if args.pr_body is not None and active.id in statuses:
@@ -1040,7 +964,6 @@ def compute_status(ctx: Context, args) -> dict:
 
 
 def folded(change: dict, active: str | None) -> bool:
-    """A healthy merged packet that is not being worked on; its detail stays in --json."""
     return change["id"] != active and change["stage"] == "merged" and all(r["code"] == "merged" for r in change["reasons"])
 
 
@@ -1090,7 +1013,6 @@ class Refusal(Exception):
 
 
 def plan_skeleton(root: Path) -> bytes:
-    """The repository's plan skeleton, else the one shipped beside this repo.py."""
     for base in (root, Path(__file__).resolve().parent.parent):
         path = base / CHANGES / TEMPLATE_PACKET / "plan.md"
         if path.is_file():
@@ -1099,7 +1021,6 @@ def plan_skeleton(root: Path) -> bytes:
 
 
 def new_packet_files(root: Path, args) -> dict[str, bytes]:
-    """Validate the request and return the packet's files; raise Refusal when it cannot be created."""
     cid, kind = args.id, args.kind
     if cid == TEMPLATE_PACKET or not ID_RE.match(cid):
         raise Refusal(f"invalid change id {cid!r}: use lowercase letters, digits and inner hyphens (max 64)")
@@ -1206,7 +1127,6 @@ def write_json(path: Path, data) -> None:
 
 
 def approval_claim(root: Path, args) -> tuple[Path, dict, dict]:
-    """Validate an `approve` request; return (change.json path, its data, the new claim)."""
     cid, artifact = args.id, args.artifact
     check_change_id(cid)
     if artifact not in CHAIN:
@@ -1263,7 +1183,7 @@ def cmd_approve(args) -> int:
 
 
 def build_parser() -> argparse.ArgumentParser:
-    parser = argparse.ArgumentParser(prog="repo.py", description=__doc__.splitlines()[0])
+    parser = argparse.ArgumentParser(prog="repo.py", description="Repository control plane: `status`, `verify`, `new` and `approve`.")
     sub = parser.add_subparsers(dest="command", required=True)
 
     def common(p):

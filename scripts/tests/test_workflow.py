@@ -1,5 +1,3 @@
-"""Invariants of the repository's own CI workflow (plain text; no YAML dependency)."""
-
 import json
 import re
 import sys
@@ -19,7 +17,6 @@ def job_block(text: str, name: str) -> str | None:
 
 
 def direct_run_findings(text: str, argv: list[str]) -> list[str]:
-    """Why the control-plane-tests job might not run the tests directly, or let a failure pass, or []."""
     block = job_block(text, "control-plane-tests")
     if block is None:
         return ["no control-plane-tests job"]
@@ -66,9 +63,8 @@ class WorkflowInvariants(unittest.TestCase):
         self.assertRegex(self.text, r"(?m)^concurrency:\n(?:  .*\n)*  cancel-in-progress: true")
 
     def test_no_job_is_skipped_by_condition(self):
-        # Job-level `if:` would turn "not applicable" into a provider skip; only the summary may use always().
         job_ifs = re.findall(r"(?m)^    if: (.*)$", self.text)
-        self.assertEqual(job_ifs, ["always()"])
+        self.assertEqual(job_ifs, ["always()"], "a job-level if: turns not-applicable into a provider skip; only the summary may use always()")
 
     def test_summary_needs_every_job_and_requires_success(self):
         needs = re.search(r"(?m)^  summary:\n(?:    .*\n)*?    needs: \[([^\]]*)\]", self.text).group(1)
@@ -82,7 +78,6 @@ class WorkflowInvariants(unittest.TestCase):
         self.assertIn('[ "$PR_AUTHOR" != "$AGENT_LOGIN" ]', self.text)
 
     def test_control_plane_job_runs_the_registered_command_without_repo_py(self):
-        """The job's pass/fail must not depend on repo.py verify, and nothing in it may mute a failure."""
         argv = next(c for c in json.loads((ROOT / "checks.json").read_text())["checks"] if c["id"] == "control-plane")["argv"]
         self.assertEqual(direct_run_findings(self.text, argv), [])
         runner = " ".join(argv)
@@ -100,7 +95,7 @@ class WorkflowInvariants(unittest.TestCase):
 
     def test_every_check_group_is_run(self):
         sys.path.insert(0, str(ROOT / "scripts"))
-        import repo  # noqa: E402
+        import repo
 
         findings = repo.config_findings(repo.Context(root=ROOT))
         self.assertEqual([f.message for f in findings if f.code == "checks-unwired"], [])
