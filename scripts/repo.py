@@ -628,9 +628,12 @@ def hook_findings(root: Path, tracked: set) -> list[Reason]:
 TEMPLATE_PATHS = (
     "scripts/", "changes/", ".agents/", ".claude/", ".github/", "docs/", ".evidence/",
     "AGENTS.md", "README.md", "REVIEW.md", "LICENSE", "intent.md", "spec.md", "checks.json",
-    ".gitignore", ".gitattributes",
+    ".gitignore", ".gitattributes", "comment-exceptions.json",
 )
-TEMPLATE_CHECKS = {"control-plane"}
+GATE_ROLES = ("build", "test", "lint", "format", "types", "boundaries", "comments")
+EXCEPTIONS = "comment-exceptions.json"
+COMMENT_CATEGORIES = ("license", "directive", "public-api", "external-constraint")
+EXCEPTION_KEYS = {"path", "text", "category", "reason", "evidence"}
 
 
 def product_paths(tracked: set) -> list[str]:
@@ -678,6 +681,24 @@ def validate_checks(config: dict) -> list[str]:
             problems.append(f"{where}.requires must be a list of executable names")
         if not isinstance(check.get("group", "core"), str):
             problems.append(f"{where}.group must be a string")
+    return problems + gate_problems(config.get("gates"), seen)
+
+
+def gate_problems(gates, registered: set) -> list[str]:
+    if gates is None:
+        return []
+    if not isinstance(gates, dict):
+        return ["checks.json gates must be an object mapping each role to a check id or {\"none\": \"<reason>\"}"]
+    problems = []
+    for role, value in gates.items():
+        where = f"gates.{role}"
+        if role not in GATE_ROLES:
+            problems.append(f"{where}: unknown gate role {role!r}; the roles are {', '.join(GATE_ROLES)}")
+        elif isinstance(value, str):
+            if value not in registered:
+                problems.append(f"{where}: {value!r} is not a registered check id")
+        elif not (isinstance(value, dict) and set(value) == {"none"} and isinstance(value["none"], str) and value["none"].strip()):
+            problems.append(f"{where} must be a registered check id or {{\"none\": \"<reason>\"}} with a non-empty reason and no other key")
     return problems
 
 
@@ -796,24 +817,83 @@ def source_identity(ctx: Context) -> dict:
 WORKFLOW = Path(".github/workflows/repository.yml")
 
 
+def gate_findings(ctx: Context, config: dict) -> list[Reason]:
+    product = product_paths(set(git_paths(ctx.root, "ls-files", "-z")))
+    if not product:
+        return []
+    example = f"{len(product)} product path(s) are tracked (for example {product[0]!r})"
+    if not config:
+        return [Reason("error", "checks-missing", f"{example} but checks.json is missing; restore it and decide every gate (see the repository-quality skill)")]
+    gates = config.get("gates") or {}
+    missing = [role for role in GATE_ROLES if role not in gates]
+    if not missing:
+        return []
+    return [Reason(
+        "error", "gates-undecided",
+        f"{example} but checks.json gates leaves {', '.join(missing)} undecided; decide each role in checks.json `gates`: "
+        "a registered check id or {\"none\": \"<reason>\"}; see the repository-quality skill",
+    )]
+
+
+def exception_findings(ctx: Context) -> list[Reason]:
+    path = ctx.root / EXCEPTIONS
+    if not path.is_file():
+        return []
+    return [Reason("error", "comment-exceptions-invalid", f"{EXCEPTIONS}: {p}") for p in exception_problems(ctx.root, path)]
+
+
+def exception_problems(root: Path, path: Path) -> list[str]:
+    try:
+        register = json.loads(path.read_text())
+    except (ValueError, UnicodeDecodeError) as exc:
+        return [f"not valid JSON: {exc}"]
+    if not isinstance(register, dict) or register.get("schema") != SCHEMA or not isinstance(register.get("exceptions"), list):
+        return [f"needs \"schema\": {SCHEMA} and an \"exceptions\" list"]
+    tracked = set(git_paths(root, "ls-files", "-z"))
+    problems, seen = [], set()
+    for i, entry in enumerate(register["exceptions"]):
+        where = f"exceptions[{i}]"
+        if not isinstance(entry, dict):
+            problems.append(f"{where} must be an object")
+            continue
+        extra = set(entry) - EXCEPTION_KEYS
+        if extra:
+            problems.append(f"{where} has unknown keys {sorted(extra)}")
+        fields = {k: entry.get(k) for k in ("path", "text", "category", "reason")}
+        blank = [k for k, v in fields.items() if not isinstance(v, str) or not v.strip()]
+        if blank:
+            problems.append(f"{where} needs a non-empty {', '.join(blank)}")
+            continue
+        if fields["category"] not in COMMENT_CATEGORIES:
+            problems.append(f"{where}.category {fields['category']!r} is not one of {', '.join(COMMENT_CATEGORIES)}; our own code gets no comment, so fix the code instead")
+        evidence = entry.get("evidence")
+        if fields["category"] == "external-constraint" and not (isinstance(evidence, str) and evidence.strip()):
+            problems.append(f"{where}: an external-constraint needs evidence naming the outside source")
+        text = fields["text"].strip()
+        key = (fields["path"], text)
+        if key in seen:
+            problems.append(f"{where} is a duplicate of an earlier entry for {fields['path']}")
+        seen.add(key)
+        if fields["path"] not in tracked:
+            problems.append(f"{where}.path {fields['path']!r} is not tracked")
+            continue
+        try:
+            lines = {line.strip() for line in (root / fields["path"]).read_text().splitlines()}
+        except (OSError, UnicodeDecodeError):
+            lines = set()
+        if text not in lines:
+            problems.append(f"{where}.text is not a line of {fields['path']}; delete the stale entry")
+    return problems
+
+
 def config_findings(ctx: Context) -> list[Reason]:
     config = load_config(ctx.root)
     if not config:
-        return []
+        return gate_findings(ctx, config)
     problems = validate_checks(config)
     if problems:
         return [Reason("error", "checks-invalid", p) for p in problems]
-    findings = []
-    registered = {c["id"] for c in config["checks"]}
-    if registered <= TEMPLATE_CHECKS:
-        tracked = set(git_paths(ctx.root, "ls-files", "-z"))
-        product = product_paths(tracked)
-        if product:
-            findings.append(Reason(
-                "warn", "checks-unregistered",
-                f"{len(product)} product path(s) are tracked (for example {product[0]!r}) but only the template's "
-                f"{sorted(TEMPLATE_CHECKS)} check is registered in checks.json; use the repository-quality skill to register build, test, lint, format and type checks",
-            ))
+    findings = gate_findings(ctx, config)
     workflow = ctx.root / WORKFLOW
     if not workflow.is_file():
         return findings
@@ -940,7 +1020,7 @@ def compute_status(ctx: Context, args) -> dict:
     if active.id in statuses:
         result["active"] = active.id
         result["changed_paths"] = check_scope(ctx, statuses[active.id])
-    surface = surface_findings(ctx) + config_findings(ctx)
+    surface = surface_findings(ctx) + config_findings(ctx) + exception_findings(ctx)
     failures = list(active.errors)
     if active.id is None and not active.errors and args.pr_body is not None:
         failures.append("pull request has no Change-ID")
@@ -1103,6 +1183,7 @@ def cmd_new(args) -> int:
         print(f"created {CHANGES}/{args.id}/{rel}")
     if args.kind == "product-init":
         print("remove the unestablished marker from the copied intent.md and spec.md while drafting them")
+        print("decide the folder structure in spec.md (default: feature-based vertical slices; see the sdlc-artifacts skill) and every checks.json gate before the first product path lands")
     print(f"base.commit is {json.loads(files['change.json'])['base']['commit']} (HEAD); run new from the change's branch point")
     print(f"next: python3 scripts/repo.py status --change {args.id}")
     return 0

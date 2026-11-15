@@ -26,6 +26,15 @@ GIT_ENV = {
 }
 DEFAULT_GIT_ENV = dict(GIT_ENV)
 _TEMPLATE: Path | None = None
+GATE_ROLES = ("build", "test", "lint", "format", "types", "boundaries", "comments")
+FIXTURE_GATES = {role: {"none": "fixture"} for role in GATE_ROLES}
+
+
+def checks_json(checks=(), gates=FIXTURE_GATES, **top) -> str:
+    config = {"schema": 1, **top, "checks": list(checks)}
+    if gates is not None:
+        config["gates"] = gates
+    return json.dumps(config, indent=2) + "\n"
 
 
 def digest(data: str | bytes) -> str:
@@ -51,6 +60,7 @@ def _template() -> Path:
         (root / "AGENTS.md").write_text("# Repository Agent Instructions\n")
         (root / "intent.md").write_text(UNESTABLISHED + "# Intent\n")
         (root / "spec.md").write_text(UNESTABLISHED + "# Specification\n")
+        (root / "checks.json").write_text(checks_json())
         git("add", "-A")
         git("commit", "-q", "--allow-empty", "-m", "initial")
         _TEMPLATE = root
@@ -88,6 +98,9 @@ class RepoCase(unittest.TestCase):
         path = self.root / rel
         path.parent.mkdir(parents=True, exist_ok=True)
         path.write_text(text)
+
+    def write_checks(self, checks=(), gates=FIXTURE_GATES, **top):
+        self.write("checks.json", checks_json(checks, gates, **top))
 
     def read(self, rel: str) -> str:
         return (self.root / rel).read_text()
