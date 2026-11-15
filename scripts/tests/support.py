@@ -1,5 +1,3 @@
-"""Throwaway git repositories for control-plane fixtures."""
-
 from __future__ import annotations
 
 import atexit
@@ -22,13 +20,10 @@ GIT_ENV = {
     "GIT_COMMITTER_EMAIL": "fixture@example.invalid",
     "GIT_CONFIG_GLOBAL": os.devnull,
     "GIT_CONFIG_NOSYSTEM": "1",
-    # `git commit` would start detached auto maintenance, which creates and removes
-    # `objects/maintenance.lock` after commit returns and races copytree and cleanup.
     "GIT_CONFIG_COUNT": "1",
     "GIT_CONFIG_KEY_0": "maintenance.auto",
     "GIT_CONFIG_VALUE_0": "false",
 }
-# Snapshot before any test patches GIT_ENV, so the shared template never sees a patch.
 DEFAULT_GIT_ENV = dict(GIT_ENV)
 _TEMPLATE: Path | None = None
 
@@ -40,7 +35,6 @@ def digest(data: str | bytes) -> str:
 
 
 def _template() -> Path:
-    """The initial repository, built once per process under DEFAULT_GIT_ENV and copied per test."""
     global _TEMPLATE
     if _TEMPLATE is None:
         tmp = tempfile.TemporaryDirectory()
@@ -53,7 +47,6 @@ def _template() -> Path:
             subprocess.run(["git", *args], cwd=root, env=env, check=True, capture_output=True)
 
         git("init", "-q", "-b", "main")
-        # Every test repository is a copy, so Git calls made without GIT_ENV stay covered too.
         git("config", "maintenance.auto", "false")
         (root / "AGENTS.md").write_text("# Repository Agent Instructions\n")
         (root / "intent.md").write_text(UNESTABLISHED + "# Intent\n")
@@ -62,11 +55,6 @@ def _template() -> Path:
         git("commit", "-q", "--allow-empty", "-m", "initial")
         _TEMPLATE = root
     return _TEMPLATE
-
-
-# -- running control-plane scripts ---------------------------------------------
-#
-# Tests run repo.py and guard.py as real subprocesses, the way a user or CI does.
 
 
 def run_subprocess(script: Path, args, stdin, cwd) -> subprocess.CompletedProcess:
@@ -81,8 +69,6 @@ def run_subprocess(script: Path, args, stdin, cwd) -> subprocess.CompletedProces
 
 
 class RepoCase(unittest.TestCase):
-    """Each test gets a fresh repository on `main` with an initial commit."""
-
     def setUp(self):
         self._tmp = tempfile.TemporaryDirectory()
         self.root = Path(self._tmp.name) / "repo"
@@ -90,8 +76,6 @@ class RepoCase(unittest.TestCase):
 
     def tearDown(self):
         self._tmp.cleanup()
-
-    # -- git / files ---------------------------------------------------------
 
     def git(self, *args, cwd=None) -> str:
         env = {**os.environ, **GIT_ENV}
@@ -112,8 +96,6 @@ class RepoCase(unittest.TestCase):
         self.git("add", "-A")
         self.git("commit", "-q", "--allow-empty", "-m", message)
         return self.git("rev-parse", "HEAD")
-
-    # -- change packets --------------------------------------------------------
 
     def packet(self, cid, kind="implementation", scope=(), baseline=None, approvals=(), artifacts=None, **extra):
         artifacts = artifacts if artifacts is not None else {"plan.md": f"# Plan for {cid}\n"}
@@ -150,7 +132,6 @@ class RepoCase(unittest.TestCase):
         path.write_text(json.dumps(data, indent=2) + "\n")
 
     def establish_baseline(self):
-        """Merge a product-init change on `main`, so root intent/spec are established and its packet is merged."""
         self.packet(
             "init",
             kind="product-init",
@@ -160,8 +141,6 @@ class RepoCase(unittest.TestCase):
         self.write("intent.md", "# Intent\nreal\n")
         self.write("spec.md", "# Spec\nreal\n")
         return self.commit("merge init")
-
-    # -- running repo.py -------------------------------------------------------
 
     def run_script(self, script: Path, args, stdin=None, cwd=None):
         return run_subprocess(script, args, stdin, cwd or self.root)

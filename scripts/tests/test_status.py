@@ -1,5 +1,3 @@
-"""Fixtures for `repo.py status`: identity, lifecycle, approval, scope, merged packets."""
-
 import contextlib
 import io
 import json
@@ -70,7 +68,7 @@ class Lifecycle(RepoCase):
 
     def test_out_of_order_timestamps_are_blocked(self):
         self.packet("init", kind="product-init", artifacts={"intent.md": "# I\n", "spec.md": "# S\n", "plan.md": "# P\n"})
-        self.approve("init", "plan.md", "spec.md", "intent.md")  # later seconds for upstream artifacts
+        self.approve("init", "plan.md", "spec.md", "intent.md")
         self.assertIn("out-of-order", self.codes(self.status("--change", "init"), "init"))
 
     def test_ordered_product_init_reaches_implementation(self):
@@ -109,6 +107,20 @@ class Lifecycle(RepoCase):
     def test_stored_lifecycle_label_is_rejected(self):
         self.packet("alpha", kind="repository", status="accepted")
         self.assertIn("invalid-change", self.codes(self.status("--change", "alpha"), "alpha"))
+
+    def test_another_packets_lifecycle_errors_do_not_fail_the_gate(self):
+        self.packet("alpha", kind="repository", scope=["changes/beta/**"])
+        self.approve("alpha", "plan.md")
+        self.packet("beta")
+        result = self.status("--change", "alpha")
+        self.assertIn("baseline-unestablished", self.codes(result, "beta"))
+        self.assertEqual(result["exit"], 0, result["failures"])
+
+    def test_another_packets_invalid_record_fails_the_gate(self):
+        self.packet("alpha", kind="repository", scope=["changes/beta/**"])
+        self.approve("alpha", "plan.md")
+        self.packet("beta", kind="repository", status="accepted")
+        self.assertFailed(self.status("--change", "alpha"), "beta:")
 
 
 class Approval(RepoCase):
@@ -328,7 +340,7 @@ class TextOutput(RepoCase):
 
     def test_merged_packet_with_a_reason_prints_in_full(self):
         sys.path.insert(0, str(REPO_PY.parent))
-        import repo  # noqa: E402
+        import repo
 
         change = {"id": "alpha", "kind": "repository", "stage": "merged", "freshness": "current", "approval": "none",
                   "readiness": "blocked", "artifacts": {},
@@ -423,8 +435,6 @@ class WriteScope(RepoCase):
 
 
 class MergedPackets(RepoCase):
-    """A packet on the baseline branch's tip is merged: its pull request closed it."""
-
     def branch_change(self, scope):
         self.git("switch", "-q", "-c", "change/alpha")
         self.packet("alpha", kind="repository", scope=scope)
@@ -553,7 +563,7 @@ class Surfaces(RepoCase):
 
     def test_plain_file_adapter_is_broken(self):
         self.adapters()
-        self.write(".claude/skills/demo", "../../.agents/skills/demo")  # what core.symlinks=false checks out
+        self.write(".claude/skills/demo", "../../.agents/skills/demo")
         self.assertFailed(self.status(), "core.symlinks=false")
 
     def test_copied_skill_adapter_is_broken(self):
@@ -587,7 +597,7 @@ class Surfaces(RepoCase):
         self.assertFailed(self.status(), "scripts/hooks/missing.py, which is not tracked")
 
     def test_hook_script_without_exec_bit_is_still_valid(self):
-        self.hook_script(executable=False)  # the adapter runs it through python3
+        self.hook_script(executable=False)
         self.settings("python3 scripts/hooks/guard.py claude")
         self.commit("hooks")
         self.assertTrue(self.status()["ok"])

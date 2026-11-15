@@ -1,5 +1,3 @@
-"""`repo.py new`: mechanical packet creation."""
-
 from __future__ import annotations
 
 import json
