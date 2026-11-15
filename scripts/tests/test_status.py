@@ -872,12 +872,15 @@ class PullRequestGate(RepoCase):
         self.assertTrue(result["ok"], result["failures"])
 
 
-if __name__ == "__main__":
-    unittest.main()
-
-
 class TemplatePin(RepoCase):
     PIN = {"commit": "a" * 40, "digest": "sha256:" + "b" * 64}
+    OWNED = ".agents/skills/template-upgrade/references/owned-files.txt"
+
+    def setUp(self):
+        super().setUp()
+        self.write("scripts/repo.py", "installed\n")
+        self.write(self.OWNED, f"{self.OWNED}\nscripts/repo.py\n")
+        self.commit("installed template copy")
 
     def invalid(self, pin):
         self.write_checks(template=pin)
@@ -901,10 +904,14 @@ class TemplatePin(RepoCase):
         self.assertEqual(self.invalid({**self.PIN, "commit": "A" * 40}), ["template.commit must be a full 40-hex commit id"])
         self.assertEqual(self.invalid({**self.PIN, "digest": "b" * 64}), ["template.digest must be sha256:<64 hex>"])
 
-    def test_carried_must_be_unique_copy_paths(self):
+    def test_carried_must_be_unique_tracked_owned_paths(self):
         self.assertEqual(self.invalid({**self.PIN, "carried": "scripts/repo.py"}), ["template.carried must be a list of paths"])
         self.assertEqual(self.invalid({**self.PIN, "carried": ["src/app.py"]}), ["template.carried: 'src/app.py' is not a template-owned copy path"])
         self.assertEqual(self.invalid({**self.PIN, "carried": ["scripts/repo.py", "scripts/repo.py"]}), ["template.carried lists a path twice"])
+        self.assertEqual(
+            self.invalid({**self.PIN, "carried": ["scripts/hooks/local.py"]}),
+            [f"template.carried: scripts/hooks/local.py must be tracked files listed in {self.OWNED}"],
+        )
 
     def test_a_wrong_digest_is_template_drift(self):
         self.write_checks(template=self.PIN)
@@ -913,7 +920,7 @@ class TemplatePin(RepoCase):
         self.assertEqual(len(drift), 1, result["surface"])
         self.assertEqual(result["exit"], 1)
 
-    def test_an_untracked_carried_path_is_named(self):
-        self.write_checks(template={**self.PIN, "carried": ["scripts/hooks/local.py"]})
-        drift = [s["message"] for s in self.status()["surface"] if s["code"] == "template-drift"]
-        self.assertEqual(drift, ["template.carried names 'scripts/hooks/local.py', which is not tracked"])
+
+if __name__ == "__main__":
+    unittest.main()
+

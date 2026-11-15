@@ -9,7 +9,7 @@ description: Upgrade a repository built on this template to a later template com
 
 The template's files fall into three groups. `repo.py` defines the first two (`UPGRADE_COPY`, `UPGRADE_MERGE`):
 
-- **copy**: the control plane, its tests, the guard, `changes/README.md`, `changes/_template/` and the core skills. Never edited locally. `status` fails with `template-drift` when they differ from the pin.
+- **copy**: the control plane, its tests, the guard, `changes/README.md`, `changes/_template/` and the core skills. `references/owned-files.txt` lists every file the template owns there. Never edited locally, except paths listed in `template.carried`. `status` fails with `template-drift`, naming the files, when an owned file differs from the pin. The repository's own files inside those directories are `local`: never pinned and never touched.
 - **merge**: `AGENTS.md`, `REVIEW.md`, `checks.json`, `.claude/settings.json`, the workflow, the PR template, `.gitignore`, `.gitattributes`. Merged by hand, keeping the product's own lines.
 - **never**: the template's `README.md`, `LICENSE`, `docs/`, `intent.md`, `spec.md` and its `changes/<id>/` packets.
 
@@ -24,8 +24,9 @@ git clone <template url> ../sdlc-template
 python3 ../sdlc-template/scripts/repo.py upgrade --template ../sdlc-template --to <tag or commit> [--from <base>]
 ```
 
-- The base is `checks.json` `template.commit`. Without a pin, take it from the repository's own record of what it adopted. Without one, run without `--from`: the command lists candidate commits by how many copy files match, oldest first, and stops. Pick the oldest full match and confirm it with the owner when no candidate matches fully. A base that is too new silently skips migrations; one that is too old only repeats diffs.
-- Read every section: `drift`, `carried`, `copy`, `merge`, `local`, `migrations`, `pin`. The command writes nothing.
+- The base is `checks.json` `template.commit`. Without a pin, take it from the repository's own record of what it adopted. Without one, run without `--from`: the command prints the commits with the most matching copy files, oldest first, and stops. Take the oldest, and confirm it with the owner unless it matches fully. A base that is too new silently skips migrations.
+- The report compares the Git index, so stage or commit local work first. It needs a full clone, not a shallow one.
+- Read every section: `drift`, `carried`, `copy`, `merge`, `local`, `migrations`, `pin`. A file already at the target is not listed again. The command writes nothing.
 
 ## 2. Dry run
 
@@ -35,7 +36,7 @@ Apply the upgrade on a scratch clone of the repository, then run `repo.py status
 
 One `repository` change per upgrade, for example `template-upgrade-<short commit>`.
 
-- `write_scope`: the copy files the report lists, the merge files it lists, `checks.json` always (pin and gates), and every path a migration entry names.
+- `write_scope`: the copy and carried files the report lists, the merge files it lists, `checks.json` always (pin and gates), and every path a migration entry names.
 - The plan records the base and target commits, each migration and how it is resolved, and each drifted or carried file and what happens to it.
 
 ## 4. Drift
@@ -50,9 +51,10 @@ A drifted copy file is never silently overwritten. Choose one, with the owner:
 
 Per file, from the report:
 
-- `added` and `changed`: `git -C <clone> show <to>:<path> > <path>`, keeping the mode (`chmod +x` for 100755) and recreating symlinks with `ln -s`.
-- `removed`: delete exactly the listed files. Never delete a whole directory; `local` files stay.
-- `merge` and `carried`: run the printed `git merge-file` recipe, resolve conflicts, and keep the product's own lines.
+- `added` and `changed`: create the parent directory, then `git -C <clone> show <to>:<path> > <path>`. For an entry marked `(executable)`, also `chmod +x`. For one marked `(symlink)`, remove the path and run `ln -s "$(git -C <clone> show <to>:<path>)" <path>` instead. An entry marked `collides` overwrites a file of the repository's own: move that file out first.
+- `removed`: `git rm` exactly the listed files. Never delete a whole directory; `local` files stay.
+- `merge` and `carried`: run the printed `git merge-file` recipe (bash or zsh), resolve conflicts, and keep the product's own lines. A carried file `removed upstream` is deleted, or kept as a local file, which the pin then ignores.
+- `git add` everything. `status` reads the index.
 
 ## 6. Migrations
 
