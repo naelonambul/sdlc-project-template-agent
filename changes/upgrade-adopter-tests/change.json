@@ -1,0 +1,25 @@
+{
+  "schema": 1,
+  "id": "upgrade-adopter-tests",
+  "kind": "repository",
+  "title": "Run the template's own upgrade invariants only in the template, not in adopters",
+  "base": {
+    "ref": "main",
+    "commit": "8e3ce0d7a9a67f943bda0c19253ece87d998b0c6"
+  },
+  "baseline": {},
+  "write_scope": [
+    "scripts/tests/test_upgrade.py",
+    ".agents/skills/template-upgrade/SKILL.md"
+  ],
+  "approvals": [
+    {
+      "artifact": "plan.md",
+      "sha256": "sha256:b41465b65043c00dfe34df78533514c6d31c1b16a2d4c2bf910f984e1b8894ad",
+      "by": "naelonambul",
+      "at": "2026-11-15T22:14:41Z",
+      "write_scope_sha256": "sha256:61af16b7f1c870c70f673b68b62af5e751144f4647ff86d3c866dbbf9dbe6e95",
+      "note": "Owner approved in chat on 2026-11-16: \uc2b9\uc778 (plan digest b41465b6)"
+    }
+  ]
+}
