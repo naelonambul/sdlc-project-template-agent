@@ -717,7 +717,7 @@ def pin_problems(pin) -> list[str]:
     if not isinstance(carried, list) or not all(isinstance(c, str) for c in carried):
         return problems + ["template.carried must be a list of paths"]
     for path in carried:
-        if not in_copy_group(path, UPGRADE_COPY):
+        if not in_copy_group(path, UPGRADE_COPY) or path == OWNED:
             problems.append(f"template.carried: {path!r} is not a template-owned copy path")
     if len(set(carried)) != len(carried):
         problems.append("template.carried lists a path twice")
@@ -774,10 +774,13 @@ def template_findings(ctx: Context, config: dict) -> list[Reason]:
     pin = config.get("template")
     if pin is None:
         return []
-    manifest = ctx.root / OWNED
-    if not manifest.is_file():
-        return [Reason("error", "checks-invalid", f"checks.json template is set but {OWNED} is missing; restore it from the pinned template")]
-    owned = owned_manifest(manifest.read_text())
+    manifest = git(ctx.root, "show", f":{OWNED}", binary=True, check=False)
+    if manifest is None:
+        return [Reason("error", "checks-invalid", f"checks.json template is set but {OWNED} is not tracked; restore it from the pinned template")]
+    owned = owned_manifest(manifest.decode(errors="replace"))
+    outside = [rel for rel in owned if not in_copy_group(rel, UPGRADE_COPY)]
+    if outside:
+        return [Reason("error", "checks-invalid", f"{OWNED} lists paths outside the copy group: {', '.join(outside[:5])}")]
     index = index_entries(ctx.root)
     carried = pin.get("carried", [])
     bad = [c for c in carried if c not in owned or c not in index]
@@ -1411,6 +1414,9 @@ class Clone:
         manifest = git(self.path, "show", f"{commit}:{OWNED}", check=False)
         if manifest is not None:
             paths = owned_manifest(manifest)
+            outside = [rel for rel in paths if not in_copy_group(rel, copy_entries)]
+            if outside:
+                raise Refusal(f"{OWNED} at {commit[:12]} lists paths outside the copy group: {', '.join(outside[:5])}")
             entries = tree_entries(self.path, commit, paths)
             return {rel: entries.get(rel, MISSING) for rel in paths}
         return {rel: e for rel, e in tree_entries(self.path, commit, copy_entries).items() if in_copy_group(rel, copy_entries)}

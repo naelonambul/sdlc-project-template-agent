@@ -316,7 +316,17 @@ class Upgrade(RepoCase):
         pin = self.pin(self.report("--to", self.c["c3"], "--from", self.c["c1"]))
         self.apply_c3(pin)
         self.git("rm", "-q", OWNED)
-        self.assertIn(f"{OWNED} is missing", self.surface("checks-invalid")[0])
+        self.assertIn(f"{OWNED} is not tracked", self.surface("checks-invalid")[0])
+
+    def test_a_manifest_naming_outside_paths_or_carried_itself_is_invalid(self):
+        pin = self.pin(self.report("--to", self.c["c3"], "--from", self.c["c1"]))
+        self.apply_c3(pin)
+        self.write_checks(template={**pin, "carried": [OWNED]})
+        self.assertIn(f"template.carried: {OWNED!r} is not a template-owned copy path", self.surface("checks-invalid"))
+        self.write_checks(template=pin)
+        self.write(OWNED, "../outside\n" + (self.root / OWNED).read_text())
+        self.git("add", "-A")
+        self.assertIn("lists paths outside the copy group: ../outside", self.surface("checks-invalid")[0])
 
     def test_drift_without_history_points_at_the_report(self):
         pin = self.pin(self.report("--to", self.c["c3"], "--from", self.c["c1"]))

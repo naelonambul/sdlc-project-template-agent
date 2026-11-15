@@ -45,7 +45,7 @@ A drifted copy file is never silently overwritten. Choose one, with the owner:
 
 1. Upstream the rule to the template, then upgrade to it.
 2. Move it out of the copy group: a registered check or a wrapper elsewhere.
-3. List the path in `template.carried`. The report then prints a three-way merge for it on every upgrade, so the edit stays visible.
+3. List the path in `template.carried`. The report then prints a three-way merge for it on every upgrade, so the edit stays visible. On the first upgrade there is no digest yet: write `"template": {"commit": "<base>", "digest": "sha256:" followed by 64 zeros, "carried": [...]}`, run the report, and record the pin it prints.
 
 ## 5. Apply
 
