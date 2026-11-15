@@ -1,0 +1,33 @@
+{
+  "schema": 1,
+  "id": "codebase-rules-gate",
+  "kind": "repository",
+  "title": "Initial setup decides codebase structure, quality gates and comment policy; status enforces the decisions",
+  "base": {
+    "ref": "main",
+    "commit": "4f999693d37b9d33f9acd83203061f66a4adcbc5"
+  },
+  "baseline": {},
+  "write_scope": [
+    "scripts/repo.py",
+    "scripts/tests/**",
+    "scripts/README.md",
+    "README.md",
+    "REVIEW.md",
+    "AGENTS.md",
+    ".agents/skills/sdlc-artifacts/**",
+    ".agents/skills/repository-quality/**",
+    ".agents/skills/change-execution/**",
+    "docs/agent-surfaces.md"
+  ],
+  "approvals": [
+    {
+      "artifact": "plan.md",
+      "sha256": "sha256:5a927b0365d09ea1880b7fac5653752394c4091b0ff358df7ac64b4665b8f02f",
+      "by": "naelonambul",
+      "at": "2026-11-15T16:12:41Z",
+      "write_scope_sha256": "sha256:f4267f1652dbdce16c0df4dddace1d3dcada4bd8a8539fee7e4242f2e1997258",
+      "note": "owner: \uc2b9\uc778 (plan sha256:5a927b03\u2026, 2026-11-16)"
+    }
+  ]
+}

@@ -20,6 +20,9 @@ Review the implementation against the human owner's explicit decisions, `AGENTS.
 ## Finding levels
 
 - **Important**: could break required behavior, cause a regression, violate approved artifacts or repository policy, create a security/privacy problem, or invalidate verification.
+  Always Important, whatever the diff's size:
+  - a `comment-exceptions.json` entry whose reason explains, defends or postpones our own code (a workaround, "for now", "do not remove", a complexity note, history, a TODO), or whose category does not fit. The fix is to change the code and remove the entry, never to reword the reason;
+  - a `checks.json` gate set to `none` whose reason does not hold for the product, such as "later" or "not set up yet".
 - **Nit**: non-blocking style or local cleanup. Report at most five nits; summarize additional minor issues instead of flooding the review.
 
 Do not spend review budget repeating formatting, lint, or other findings that deterministic repository checks already enforce unless the deterministic check itself is missing or broken.
