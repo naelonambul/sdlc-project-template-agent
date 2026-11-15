@@ -1,0 +1,21 @@
+{
+  "schema": 1,
+  "id": "template-upgrade",
+  "kind": "repository",
+  "title": "template-upgrade: a pinned, diffable upgrade path for repositories built on the template",
+  "base": {
+    "ref": "main",
+    "commit": "4f999693d37b9d33f9acd83203061f66a4adcbc5"
+  },
+  "baseline": {},
+  "write_scope": [
+    ".agents/skills/template-upgrade/**",
+    ".claude/skills/template-upgrade",
+    "scripts/repo.py",
+    "scripts/tests/**",
+    "scripts/README.md",
+    "README.md",
+    "docs/agent-surfaces.md"
+  ],
+  "approvals": []
+}
