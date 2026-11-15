@@ -17,5 +17,14 @@
     "README.md",
     "docs/agent-surfaces.md"
   ],
-  "approvals": []
+  "approvals": [
+    {
+      "artifact": "plan.md",
+      "sha256": "sha256:6cf0358fb79250d83a835ebac656a3b96f496aac85ccfbf288d44579b9308908",
+      "by": "naelonambul",
+      "at": "2026-11-15T21:24:24Z",
+      "write_scope_sha256": "sha256:aaf2bdcf03987061082b148154aefd3319ffa6f04f0b87e3c6b265962a1d75ec",
+      "note": "owner: \uc2b9\uc778 (plan sha256:6cf0358f\u2026, 2026-11-16)"
+    }
+  ]
 }
