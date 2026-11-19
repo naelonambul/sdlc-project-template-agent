@@ -24,6 +24,8 @@ The lifecycle rules are executable. `python3 scripts/repo.py status --change <id
 
 Never let a downstream artifact silently contradict an approved upstream one. Surface the conflict to the owner.
 
+Every plan's **Expected byproducts and cleanup** section lists expected implementation, testing and verification byproducts, or states "None expected". For each, identify its location or bounded creation pattern, purpose and ownership, removal or retention decision, timing, and deletion risk. Include temporary files, scratch checkouts, processes and external tool resources where relevant; retain required evidence and intentional backups. Record actual identities when resources are created. Planned cleanup does not expand `write_scope`, override tool permissions, or authorize deleting shared or in-use resources; creation patterns are never deletion globs.
+
 ### Incidents
 
 An `incident` change starts from a report (a ticket, an alert, a monitor) and its plan is reproduce-first:
@@ -48,6 +50,10 @@ An `incident` change starts from a report (a ticket, an alert, a monitor) and it
 - If a material departure from the approved plan is needed, stop, revise `plan.md`, and get a fresh owner approval.
 - Never revise an approved upstream artifact to make implementation easier or to justify code after the fact.
 
+Compare actual byproducts with the plan as work proceeds. Before deleting an unexpected item, assess its origin and ownership, current users and dependencies, possible data or work loss, evidence or backup retention, and recoverability. Follow **Pre-existing local files** below for pre-existing files; use resource-specific read-only queries to establish the origin and use of processes or external resources.
+
+Promptly notify the owner when deletion could lose work, affect shared or in-use resources, or needs an owner decision; preserve those items and uncertain resources pending that decision. Include unresolved items and deletion risks when opening or updating the pull request. PR disclosure alone is not deletion permission. An unexpected item proven task-owned, disposable, unused and safe may be removed within existing authorization through the owning tool's supported path; report the assessment and disposition to the owner or in the PR. A material plan or scope departure still requires revision and fresh approval. Report results in chat or the PR without editing an approved plan merely to log discoveries.
+
 ### Pre-existing local files
 
 A file the current task did not create may belong to the owner's IDE or tools, whether it is tracked, untracked or ignored. Before deleting, overwriting, regenerating, moving it, or changing an ignore rule that affects it:
@@ -67,6 +73,14 @@ Follow the Lifecycle section of `changes/README.md`: replace the root with any a
 - When the change touches `AGENTS.md`, a skill or the guard, run the probes in `docs/agent-surfaces.md` once and record the result there.
 - Make the last push yourself: the owner can approve only a pull request the agent identity authored and pushed last (`docs/host-setup.md`).
 - A change that touches `.github/workflows/**` needs one owner push before yours; follow "Workflow changes" in `docs/host-setup.md`.
+
+### After the pull request closes
+
+Confirm the host's final PR state, distinguishing merged from closed without merging, through the agent identity path in `docs/host-setup.md`. If that path is unavailable, ask the owner for confirmation; never fall back to the owner's credentials. Cleanup follows closure and does not determine the computed merged state.
+
+Reconcile planned and actual byproducts and recheck ownership, retention and current use. Remove only clearly work-owned, disposable, unused items through supported tool paths. Preserve required verification evidence, intentional backups, shared or in-use resources, and anything uncertain; follow the origin and risk procedures above. Closing without merging does not make unmerged work disposable. Keep the active checkout and originating session intact while in use.
+
+Report in the originating chat what was removed, what remains and why, including when nothing was removed. Report post-closure discoveries and deletion risks there rather than leaving them only in a closed PR.
 
 ### When CI is red
 

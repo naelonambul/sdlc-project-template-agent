@@ -1,0 +1,26 @@
+{
+  "schema": 1,
+  "id": "closeout-byproducts",
+  "kind": "repository",
+  "title": "Safely close out disposable work byproducts",
+  "base": {
+    "ref": "main",
+    "commit": "09f10e74c5a792e0b2e3defb6405cb25e5d658f5"
+  },
+  "baseline": {},
+  "write_scope": [
+    ".agents/skills/sdlc-artifacts/SKILL.md",
+    "docs/agent-surfaces.md",
+    "changes/_template/plan.md"
+  ],
+  "approvals": [
+    {
+      "artifact": "plan.md",
+      "sha256": "sha256:b170f18e2c4a63252df014cc8d94106b9d8612772adb585a5dab40bc8049060f",
+      "by": "naelonambul",
+      "at": "2026-11-19T02:14:36Z",
+      "write_scope_sha256": "sha256:f30f9f68e56872a9046a9bb3f9151d6e464ab93838a08d38d8ad3f16217d27d7",
+      "note": "\uc2b9\uc778"
+    }
+  ]
+}
