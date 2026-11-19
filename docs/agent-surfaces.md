@@ -55,6 +55,8 @@ The `workspace-write` sandbox keeps `.git` read-only, so Codex cannot commit in 
 
 | Date | Surface | Setup | `AGENTS.md` delivered | Project skills discovered |
 |---|---|---|---|---|
+| 2026-11-19 | Claude Code CLI 2.1.326 | `closeout-byproducts` candidate skill copied into fresh Git clones; positive and shadowing negative probes attempted | not observed: both exited 1 because the CLI reported subscription access unavailable | not observed; no support claim from this run |
+| 2026-11-19 | Codex CLI 0.169.0 | `closeout-byproducts` candidate skill copied into a fresh Git clone and SHA-256 compared with the source; `codex exec --sandbox read-only` | yes | 5/5 core skills, including `sdlc-artifacts`; exit 0 |
 | 2026-09-23 | Claude Code CLI 2.1.280 | no `CLAUDE.md`, no `.claude/skills` adapters | yes | 0/5 |
 | 2026-09-23 | Claude Code CLI 2.1.280 | no `CLAUDE.md`, adapters present | yes | 5/5 |
 | 2026-09-23 | Claude Code CLI 2.1.280 | `CLAUDE.md` without `@AGENTS.md`, adapters present | **no** (shadowed) | 5/5 |
