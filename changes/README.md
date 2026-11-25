@@ -73,7 +73,7 @@ The ordered path for every change, with what `python3 scripts/repo.py status --c
 | Step | Action | Expected status |
 |---|---|---|
 | 1 | Branch from the updated baseline; create the packet; draft artifacts in chain order | `stage=<first unapproved artifact>`, `readiness=blocked` |
-| 2 | Review the plan before implementation. The owner approves each artifact in order with `repo.py approve` | after the last: `stage=implementation readiness=ready` |
+| 2 | Review the plan to inform the owner's approval decision. The owner approves each artifact in order with `repo.py approve` | after the last: `stage=implementation readiness=ready` |
 | 3 | Implement inside `write_scope`; run `repo.py verify --change <id>` while iterating | unchanged |
 | 4 | Replace the root `intent.md`/`spec.md` with each accepted change-local copy, commit the approved packet and implementation, and run `repo.py verify --change <id> --full` | unchanged |
 | 5 | Review the verified implementation under [REVIEW.md](../REVIEW.md) and commit `review.md`. Verify the resulting HEAD with `--full`, push, and open one pull request with `Change-ID: <id>`, the review link, and the final verification result | the CI `status` job applies the pull-request gate |
@@ -81,6 +81,7 @@ The ordered path for every change, with what `python3 scripts/repo.py status --c
 | 7 | After merge | `stage=merged` |
 
 - **Evidence.** `verify` writes `.evidence/<run>/evidence.json`, bound to HEAD and a digest of the files it ran on (paths, modes and content, leaving out `.evidence/`). It is the author's local record. CI runs the checks again on the candidate, and the required `summary` check is the merge gate. Any commit after a `verify` needs a new one before you report the result.
+- Cite the implementation's local evidence in `review.md`. Include material results in the PR and link to evidence that reviewers can access when available. For performance claims, store raw captures under `.evidence/benchmarks/<change-id>/<run-id>/` and include the [baseline and candidate comparison](../REVIEW.md#performance-and-resource-claims) in both the review record and PR.
 - **Fixes before merge.** If the implementation changes, verify and review the updated implementation commit, then refresh and commit the review record. Verify the final HEAD with `--full` before pushing. A change to an approval-chain artifact or `write_scope` needs the owner's approval again, in chain order.
 - **After merge.** The merged pull request is the record: Git keeps the packet, the commit and its review. Record follow-up work as a new change. To undo a merged change, open a new change whose plan restores the files; a plain `git revert` of the squash commit is an acceptable way to implement it. If the undone change altered the baseline, use a kind that carries the restored `spec.md` or `intent.md` for approval.
 
