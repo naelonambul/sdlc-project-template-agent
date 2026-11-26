@@ -1,0 +1,26 @@
+{
+  "schema": 1,
+  "id": "review-evidence",
+  "kind": "repository",
+  "title": "Record change reviews and performance evidence",
+  "base": {
+    "ref": "main",
+    "commit": "f6f973f8deb9f7ae652bee9855997090b92d9763"
+  },
+  "baseline": {},
+  "write_scope": [
+    "REVIEW.md",
+    "changes/README.md",
+    ".github/pull_request_template.md"
+  ],
+  "approvals": [
+    {
+      "artifact": "plan.md",
+      "sha256": "sha256:207f645888c4ca2e6a5153cf98562611d7daad237bc2e79bedfb0f7458d8c644",
+      "by": "naelonambul",
+      "at": "2026-11-25T01:43:04Z",
+      "write_scope_sha256": "sha256:b2bb192c4e920221d5a6a252dfa4a2ef416de17e03afacfc3cf2cc5eef6dcaac",
+      "note": "\uc2b9\uc778"
+    }
+  ]
+}

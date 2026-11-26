@@ -38,6 +38,16 @@ For each substantive finding:
 
 Do not invent findings to fill a quota. A clean review may report no substantive findings.
 
+### Performance and resource claims
+
+For a change claiming improved performance, throughput, or resource use, the approved plan identifies the baseline revision, workload, environment, metrics, and acceptance criteria. Measure the baseline and candidate under the same workload and environment. Compare the results against the approved criteria and record errors and any output consistency checks in the final review and PR.
+
+Keep raw benchmark results in `.evidence/benchmarks/<change-id>/<run-id>/`. Include the baseline and candidate measurements in the final review and PR, with links to artifacts reviewers can access when available.
+
+## Final review record
+
+After verifying the implementation commit, write `changes/<id>/review.md`. Record the reviewed commit, verification evidence references, findings and their disposition, and the review conclusion. If the implementation changes, verify and review the updated revision and refresh the record. After committing the review record, verify the complete PR head and report that run separately in the PR.
+
 ## Separation of duties
 
 The agent that authored a change may self-check it, and should, but its own review is never the human gate. The owner's gates are the digest-bound `repo.py approve` claims on the artifacts and the owner's review and merge of the pull request. A claim in `change.json` is `unverified` process metadata: it binds bytes, it does not prove who approved. Prefer a fresh-context or different-model review for the final independent pass when practical.
